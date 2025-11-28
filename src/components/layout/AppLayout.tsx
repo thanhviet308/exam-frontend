@@ -25,7 +25,7 @@ const menuItems = [
 ]
 
 const AppLayout = () => {
-  const { fullName, role, logout } = useAuthContext()
+  const { user, logout } = useAuthContext()
   const location = useLocation()
 
   return (
@@ -41,9 +41,9 @@ const AppLayout = () => {
       <Layout>
         <Header className="app-header">
           <div>
-            <Typography.Text strong>{fullName}</Typography.Text>
+            <Typography.Text strong>{user?.fullName ?? 'User'}</Typography.Text>
             <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
-              {role}
+              {user?.role ?? ''}
             </Typography.Text>
           </div>
           <Typography.Link onClick={logout}>

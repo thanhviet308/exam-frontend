@@ -7,6 +7,13 @@ import { ErrorState, PageSpinner } from '../components/Loaders'
 
 const roleOptions: UserRole[] = ['ADMIN', 'TEACHER', 'STUDENT', 'SUPERVISOR']
 
+const ROLE_LABELS: Record<UserRole, string> = {
+  ADMIN: 'Quản trị viên',
+  TEACHER: 'Giáo viên',
+  STUDENT: 'Sinh viên',
+  SUPERVISOR: 'Giám thị',
+}
+
 type UserPayload = Partial<User> & { password?: string }
 
 const UsersPage = () => {
@@ -43,7 +50,7 @@ const UsersPage = () => {
     {
       title: 'Vai trò',
       dataIndex: 'role',
-      render: (role: UserRole) => <Tag color="blue">{role}</Tag>,
+      render: (role: UserRole) => <Tag color="blue">{ROLE_LABELS[role]}</Tag>,
     },
     {
       title: 'Trạng thái',
@@ -109,7 +116,12 @@ const UsersPage = () => {
             </Form.Item>
           )}
           <Form.Item name="role" label="Vai trò" rules={[{ required: true }]}>
-            <Select options={roleOptions.map((role) => ({ label: role, value: role }))} />
+            <Select
+              options={roleOptions.map((role) => ({
+                label: ROLE_LABELS[role],
+                value: role,
+              }))}
+            />
           </Form.Item>
           <Form.Item
             name="active"

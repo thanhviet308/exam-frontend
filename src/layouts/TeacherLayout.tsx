@@ -1,5 +1,5 @@
-import { Layout, Menu } from 'antd'
-import { Outlet, Link, useLocation } from 'react-router-dom'
+import { Layout, Menu, Typography } from 'antd'
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   DashboardOutlined,
   FileTextOutlined,
@@ -8,33 +8,55 @@ import {
   CalendarOutlined,
   TableOutlined,
 } from '@ant-design/icons'
-import RoleHeader from '../components/common/RoleHeader'
+import { useAuthContext } from '../context/AuthContext'
 
 const { Sider, Header, Content } = Layout
 
 const teacherMenu = [
-  { key: '/teacher', label: <Link to="/teacher">Dashboard</Link>, icon: <DashboardOutlined /> },
-  { key: '/teacher/passages', label: <Link to="/teacher/passages">Passages</Link>, icon: <FileTextOutlined /> },
-  { key: '/teacher/questions', label: <Link to="/teacher/questions">Question Bank</Link>, icon: <FormOutlined /> },
-  { key: '/teacher/templates', label: <Link to="/teacher/templates">Exam Template</Link>, icon: <ClusterOutlined /> },
-  { key: '/teacher/instances', label: <Link to="/teacher/instances">Exam Instance</Link>, icon: <CalendarOutlined /> },
-  { key: '/teacher/results', label: <Link to="/teacher/results">Exam Results</Link>, icon: <TableOutlined /> },
+  { key: '/teacher', label: <Link to="/teacher">Tổng quan</Link>, icon: <DashboardOutlined /> },
+  { key: '/teacher/passages', label: <Link to="/teacher/passages">Đoạn văn</Link>, icon: <FileTextOutlined /> },
+  { key: '/teacher/questions', label: <Link to="/teacher/questions">Ngân hàng câu hỏi</Link>, icon: <FormOutlined /> },
+  { key: '/teacher/templates', label: <Link to="/teacher/templates">Khung đề</Link>, icon: <ClusterOutlined /> },
+  { key: '/teacher/exams', label: <Link to="/teacher/exams">Kỳ thi</Link>, icon: <CalendarOutlined /> },
+  { key: '/teacher/results', label: <Link to="/teacher/results">Kết quả</Link>, icon: <TableOutlined /> },
 ]
 
 const TeacherLayout = () => {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, logout } = useAuthContext()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider breakpoint="lg" collapsedWidth="56" theme="light">
-        <div style={{ padding: 16, fontWeight: 600 }}>Teacher Desk</div>
-        <Menu mode="inline" selectedKeys={[location.pathname]} items={teacherMenu} />
+    <Layout className="teacher-layout">
+      <Sider
+        breakpoint="lg"
+        collapsedWidth="56"
+        theme="dark"
+        className="teacher-sider"
+      >
+        <div className="logo-area" style={{ padding: 16, fontWeight: 700, letterSpacing: 0.2 }}>Trung tâm khảo thí</div>
+        <Menu
+          mode="inline"
+          theme="dark"
+          selectedKeys={[location.pathname]}
+          items={teacherMenu}
+          className="teacher-sider-menu"
+        />
       </Sider>
       <Layout>
-        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center' }}>
-          <RoleHeader title="Teacher Workspace" subtitle="Create questions, templates and exams" userName="Alice Teacher" />
+        <Header className="app-header teacher-header" style={{ paddingInline: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Typography.Text strong>{user?.fullName ?? 'User'}</Typography.Text>
+            <Typography.Text type="secondary" style={{ marginLeft: 8 }}>{user?.role ?? ''}</Typography.Text>
+          </div>
+          <Typography.Link onClick={handleLogout}>Đăng xuất</Typography.Link>
         </Header>
-        <Content style={{ margin: 24 }}>
+        <Content className="teacher-content">
           <Outlet />
         </Content>
       </Layout>

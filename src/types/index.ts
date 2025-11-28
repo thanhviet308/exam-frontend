@@ -1,19 +1,18 @@
 export type UserRole = 'ADMIN' | 'TEACHER' | 'STUDENT' | 'SUPERVISOR'
 
-export interface AuthResponse {
-  accessToken: string
-  refreshToken: string
-  expiresIn: number
-  role: UserRole
-  userId: number
-  fullName: string
-}
-
-export interface User {
+export interface AuthUser {
   id: number
   fullName: string
   email: string
   role: UserRole
+}
+
+export interface AuthResponse {
+  token: string
+  user: AuthUser
+}
+
+export interface User extends AuthUser {
   active: boolean
 }
 
@@ -125,5 +124,70 @@ export interface ExamStatistics {
   scoreDistribution: Record<string, number>
   questionAccuracy: Array<{ questionId: number; content: string; correctRate: number }>
   chapterAccuracy: Array<{ chapterId: number; chapterName: string; correctRate: number }>
+}
+
+export interface TeacherPassage {
+  id: number
+  subjectId: number
+  subjectName: string
+  chapterId: number
+  chapterName: string
+  content: string
+  createdAt: string
+}
+
+export interface TeacherQuestionOption {
+  id: number
+  content: string
+  isCorrect: boolean
+}
+
+export interface TeacherQuestion {
+  id: number
+  subjectId: number
+  subjectName: string
+  chapterId: number
+  chapterName: string
+  passageId?: number
+  questionType: 'MCQ' | 'FILL'
+  difficulty: number
+  marks: number
+  content: string
+  options?: TeacherQuestionOption[]
+  answers?: string[]
+  createdAt: string
+}
+
+export interface TeacherTemplate {
+  id: number
+  name: string
+  subjectId: number
+  subjectName: string
+  totalQuestions: number
+  durationMinutes: number
+  createdAt: string
+  structure: Array<{ chapterId: number; chapterName: string; numQuestion: number }>
+}
+
+export interface TeacherExamInstance {
+  id: number
+  name: string
+  templateName: string
+  studentGroupName: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  shuffleQuestions: boolean
+  shuffleOptions: boolean
+  status: 'SCHEDULED' | 'ONGOING' | 'COMPLETED'
+}
+
+export interface TeacherExamResult {
+  attemptId: number
+  studentName: string
+  studentEmail: string
+  score: number
+  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'SUBMITTED' | 'GRADED'
+  submittedAt?: string
 }
 

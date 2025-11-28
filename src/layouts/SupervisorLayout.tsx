@@ -1,29 +1,54 @@
 import { Layout, Menu } from 'antd'
-import { Outlet, Link, useLocation } from 'react-router-dom'
-import { DashboardOutlined, FieldTimeOutlined } from '@ant-design/icons'
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
+import { DashboardOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import RoleHeader from '../components/common/RoleHeader'
+import { useAuthContext } from '../context/AuthContext'
 
 const { Sider, Header, Content } = Layout
 
 const supervisorMenu = [
-  { key: '/supervisor', label: <Link to="/supervisor">Exam Sessions</Link>, icon: <DashboardOutlined /> },
-  { key: '/supervisor/monitoring', label: <Link to="/supervisor/monitoring">Monitoring</Link>, icon: <FieldTimeOutlined /> },
+  { key: '/supervisor', label: <Link to="/supervisor">Tổng quan</Link>, icon: <DashboardOutlined /> },
+  { key: '/supervisor/sessions', label: <Link to="/supervisor/sessions">Danh sách ca thi</Link>, icon: <UnorderedListOutlined /> },
 ]
 
 const SupervisorLayout = () => {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, logout } = useAuthContext()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider breakpoint="lg" collapsedWidth="56" theme="light">
-        <div style={{ padding: 16, fontWeight: 600 }}>Supervisor</div>
-        <Menu mode="inline" selectedKeys={[location.pathname]} items={supervisorMenu} />
+    <Layout className="teacher-layout">
+      <Sider
+        breakpoint="lg"
+        collapsedWidth="56"
+        theme="dark"
+        className="teacher-sider"
+      >
+        <div className="logo-area" style={{ padding: 16, fontWeight: 700, letterSpacing: 0.2 }}>
+          Trung tâm khảo thí
+        </div>
+        <Menu
+          theme="dark"
+          mode="inline"
+          selectedKeys={[location.pathname]}
+          items={supervisorMenu}
+          className="teacher-sider-menu"
+        />
       </Sider>
       <Layout>
-        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center' }}>
-          <RoleHeader title="Supervisor Console" subtitle="Manage assigned exam rooms" userName="Sara Supervisor" />
+        <Header className="app-header teacher-header" style={{ paddingInline: 24, display: 'flex', alignItems: 'center' }}>
+          <RoleHeader
+            title="Trang giám thị"
+            userName={user?.fullName ?? 'Giám thị'}
+            onLogout={handleLogout}
+          />
         </Header>
-        <Content style={{ margin: 24 }}>
+        <Content className="teacher-content">
           <Outlet />
         </Content>
       </Layout>

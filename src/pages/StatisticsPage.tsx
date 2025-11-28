@@ -29,14 +29,14 @@ const StatisticsPage = () => {
   return (
     <>
       <Typography.Title level={3}>Thống kê kỳ thi</Typography.Title>
-      <Row gutter={16}>
+      <Row gutter={[16,16]} className="mt-4">
         <Col span={12}>
-          <Card title="Phân bố điểm">
+          <Card title="Phân bố điểm" className="card">
             <Column data={distributionData} xField="range" yField="value" height={320} />
           </Card>
         </Col>
         <Col span={12}>
-          <Card title="Độ chính xác theo chương">
+          <Card title="Độ chính xác theo chương" className="card">
             <Pie
               data={chapterData}
               angleField="value"

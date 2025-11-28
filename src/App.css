@@ -1,1 +1,96 @@
-/* custom component styles placeholder */
+.teacher-layout {
+  min-height: 100vh;
+  background: #f3f5fb;
+}
+
+.teacher-sider {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 40%, #1e40af 100%) !important;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.teacher-sider .logo-area {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.teacher-sider-menu.ant-menu-dark {
+  background: transparent;
+  border-inline-end: none;
+}
+
+.teacher-sider-menu.ant-menu-dark .ant-menu-item {
+  border-radius: 8px;
+  margin-inline: 8px;
+  margin-block: 4px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.teacher-sider-menu.ant-menu-dark .ant-menu-item .ant-menu-item-icon,
+.teacher-sider-menu.ant-menu-dark .ant-menu-item .anticon {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 18px;
+}
+
+.teacher-sider-menu.ant-menu-dark .ant-menu-item .ant-menu-title-content {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.teacher-sider-menu.ant-menu-dark .ant-menu-item-selected {
+  background-color: #2563eb !important;
+  border-radius: 8px;
+  color: #ffffff !important;
+}
+
+.teacher-sider-menu.ant-menu-dark .ant-menu-item-selected .anticon,
+.teacher-sider-menu.ant-menu-dark .ant-menu-item-selected .ant-menu-item-icon {
+  color: #ffffff !important;
+}
+
+.teacher-sider-menu.ant-menu-dark .ant-menu-item-selected .ant-menu-title-content {
+  color: #ffffff !important;
+}
+
+.teacher-sider-menu .ant-menu-item,
+.teacher-sider-menu .ant-menu-title-content {
+  opacity: 1 !important;
+}
+
+.teacher-header {
+  background: #f9fafb !important;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.teacher-content {
+  margin: 24px;
+}
+
+.teacher-card {
+  border-radius: 16px !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+}
+
+.teacher-hero-card {
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.teacher-hero-card .ant-typography,
+.teacher-hero-card .ant-statistic-title {
+  color: #111827 !important;
+}
+
+.teacher-hero-card .ant-statistic-content {
+  color: #111827 !important;
+}
+
+.teacher-hero-pill {
+  padding: 8px 16px !important;
+  border-radius: 999px !important;
+  background: #e0f2fe;
+  border-color: transparent !important;
+  color: #1d4ed8 !important;
+}
+
+.teacher-hero-pill:hover {
+  background: #bfdbfe;
+}

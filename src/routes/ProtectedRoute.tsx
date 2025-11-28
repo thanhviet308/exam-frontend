@@ -3,22 +3,23 @@ import { useAuthContext } from '../context/AuthContext'
 import type { UserRole } from '../types'
 
 interface ProtectedRouteProps {
-  allowed?: UserRole[]
+  allowedRoles: UserRole[]
 }
 
-const ProtectedRoute = ({ allowed }: ProtectedRouteProps) => {
-  const { isAuthenticated, role, loading } = useAuthContext()
+const ProtectedRoute = ({ allowedRoles }: ProtectedRouteProps) => {
+  const { isAuthenticated, user, initialized } = useAuthContext()
 
-  if (loading) {
-    return <div className="centered">Đang tải...</div>
+  // Đợi AuthContext đọc xong dữ liệu từ localStorage rồi mới quyết định redirect
+  if (!initialized) {
+    return null
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />
   }
 
-  if (allowed && role && !allowed.includes(role)) {
-    return <Navigate to="/" replace />
+  if (!allowedRoles.includes(user.role)) {
+    return <Navigate to="/unauthorized" replace />
   }
 
   return <Outlet />
