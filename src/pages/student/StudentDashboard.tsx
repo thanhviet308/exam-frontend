@@ -1,6 +1,8 @@
 import { Card, List, Statistic, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { getStudentExams } from '../../api/student/examsApi'
+import { getMyHistory } from '../../api/examApi'
+import type { ExamAttemptResponse } from '../../types/models'
 import { useAuthContext } from '../../context/AuthContext'
 import dayjs from 'dayjs'
 
@@ -11,10 +13,22 @@ const StudentDashboard = () => {
     queryFn: getStudentExams,
   })
 
+  const historyQuery = useQuery<ExamAttemptResponse[]>({
+    queryKey: ['student-exam-history'],
+    queryFn: getMyHistory,
+  })
+
   const upcomingExams = examsQuery.data?.filter(
     (exam) => exam.status === 'NOT_STARTED' || exam.status === 'ONGOING',
   ) ?? []
-  const completedExams = examsQuery.data?.filter((exam) => exam.status === 'ENDED') ?? []
+  
+  // Count completed exams based on submitted/graded attempts, not just exam end time
+  const completedExamIds = new Set(
+    historyQuery.data
+      ?.filter((attempt) => attempt.status === 'SUBMITTED' || attempt.status === 'GRADED')
+      .map((attempt) => attempt.examInstanceId) || []
+  )
+  const completedExams = examsQuery.data?.filter((exam) => completedExamIds.has(exam.id)) ?? []
 
   return (
     <div>
@@ -33,7 +47,7 @@ const StudentDashboard = () => {
           <Statistic
             title="Kỳ thi đã hoàn thành"
             value={completedExams.length}
-            loading={examsQuery.isLoading}
+            loading={examsQuery.isLoading || historyQuery.isLoading}
           />
         </Card>
       </div>

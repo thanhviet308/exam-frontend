@@ -19,6 +19,7 @@ import { PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getUsers, createUser, updateUser, deleteUser } from '../../api/adminApi'
 import type { UserResponse, CreateUserRequest, UpdateUserRequest, UserRole } from '../../types/models'
+import { useAuthContext } from '../../context/AuthContext'
 
 const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'Quản trị viên',
@@ -38,6 +39,7 @@ const AdminUsersPage = () => {
   const [editing, setEditing] = useState<UserResponse | null>(null)
   const [form] = Form.useForm()
   const queryClient = useQueryClient()
+  const { user: currentUser, updateUser: updateAuthUser } = useAuthContext()
 
   const usersQuery = useQuery<UserResponse[]>({
     queryKey: ['admin-users'],
@@ -75,9 +77,27 @@ const AdminUsersPage = () => {
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: UpdateUserRequest }) =>
       updateUser(id, payload),
-    onSuccess: () => {
+    onSuccess: (updatedUser: UserResponse) => {
       message.success('Đã cập nhật người dùng')
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      
+      // Nếu đang cập nhật user hiện tại, cập nhật AuthContext
+      if (currentUser && updatedUser.id === currentUser.id) {
+        console.log('Updating current user in AuthContext:', updatedUser)
+        updateAuthUser({
+          fullName: updatedUser.fullName,
+          email: updatedUser.email,
+          role: updatedUser.role,
+        })
+        // Invalidate profile query để các trang profile cũng cập nhật
+        queryClient.invalidateQueries({ queryKey: ['user-profile-me'] })
+      } else {
+        console.log('Not updating AuthContext - different user:', {
+          currentUserId: currentUser?.id,
+          updatedUserId: updatedUser.id,
+        })
+      }
+      
       form.resetFields()
       setEditing(null)
       setModalOpen(false)

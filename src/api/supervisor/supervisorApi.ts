@@ -8,7 +8,6 @@ export interface SupervisorSession {
   examName: string
   subjectName: string
   studentGroupName: string
-  roomNumber?: string
   startTime: string
   endTime: string
   status: 'SCHEDULED' | 'ONGOING' | 'COMPLETED'
@@ -29,7 +28,6 @@ export interface MonitorData {
   examName: string
   subjectName: string
   studentGroupName: string
-  roomNumber?: string
   startTime: string
   endTime: string
   students: MonitorStudent[]
@@ -56,7 +54,11 @@ export const getSupervisorSessions = async (): Promise<SupervisorSession[]> => {
   // Fetch exams assigned to supervisor
   const instances = await apiClient.get<ExamInstanceResponse[]>('/supervisor/exams')
   
+  // Debug logging
+  console.log('[SupervisorSessions] Fetched instances:', instances.data)
+  
   if (!instances.data || instances.data.length === 0) {
+    console.log('[SupervisorSessions] No instances found')
     return []
   }
 
@@ -86,15 +88,11 @@ export const getSupervisorSessions = async (): Promise<SupervisorSession[]> => {
     const subjectName = template ? subjectMap.get(template.subjectId) ?? 'Chưa xác định' : 'Chưa xác định'
     const studentGroupName = groupMap.get(instance.studentGroupId) ?? `Nhóm #${instance.studentGroupId}`
     
-    // Find room number from supervisors (get the one matching current supervisor)
-    const roomNumber = instance.supervisors.length > 0 ? instance.supervisors[0].roomNumber : undefined
-
     return {
       id: instance.id,
       examName: instance.name,
       subjectName,
       studentGroupName,
-      roomNumber,
       startTime: instance.startTime,
       endTime: instance.endTime,
       status: mapStatus(instance),
@@ -102,48 +100,69 @@ export const getSupervisorSessions = async (): Promise<SupervisorSession[]> => {
   })
 }
 
+export interface SupervisorStatistics {
+  totalSessions: number
+  scheduledSessions: number
+  ongoingSessions: number
+  completedSessions: number
+  totalStudents: number
+  completedAttempts: number
+  totalViolations: number
+  violationsByType: Record<string, number>
+  recentSessions: Array<{
+    examInstanceId: number
+    examName: string
+    subjectName: string
+    studentGroupName: string
+    startTime: string
+    endTime: string
+    status: string
+    totalStudents: number
+    completedStudents: number
+    violationsCount: number
+  }>
+  studentViolations: Array<{
+    studentId: number
+    studentName: string
+    examInstanceId: number
+    examName: string
+    subjectName: string
+    studentGroupName: string
+    totalViolations: number
+    violationsByType: Record<string, number>
+    lastViolationTime: string
+  }>
+}
+
+export const getSupervisorStatistics = async (): Promise<SupervisorStatistics> => {
+  const response = await apiClient.get<SupervisorStatistics>('/supervisor/statistics')
+  return response.data
+}
+
 export const getMonitorData = async (examInstanceId: number): Promise<MonitorData> => {
-  // Fetch all exams assigned to supervisor and find the specific one
-  const instancesResponse = await apiClient.get<ExamInstanceResponse[]>('/supervisor/exams')
+  // Fetch instance and attempts in parallel
+  const { getStudentGroups } = await import('../adminApi')
+  
+  const [instancesResponse, attemptsResponse, groups] = await Promise.all([
+    apiClient.get<ExamInstanceResponse[]>('/supervisor/exams'),
+    apiClient.get<ExamAttemptResponse[]>(`/exam-attempts/exam/${examInstanceId}`),
+    getStudentGroups(),
+  ])
+  
   const instance = instancesResponse.data.find((inst) => inst.id === examInstanceId)
   
   if (!instance) {
     throw new Error(`Không tìm thấy ca thi với ID: ${examInstanceId}`)
   }
 
-  // Fetch attempts for this exam
-  const attemptsResponse = await apiClient.get<ExamAttemptResponse[]>(`/exam-attempts/exam/${examInstanceId}`)
   const attempts = attemptsResponse.data
-
-  // Fetch templates, groups, and subjects to map names
-  const { getStudentGroups, getSubjects } = await import('../adminApi')
-  const [templates, groups] = await Promise.all([
-    getExamTemplates(),
-    getStudentGroups(),
-  ])
-
-  const template = templates.find((t: { id: number }) => t.id === instance.templateId)
   
-  // Fetch subjects
-  const subjects = await getSubjects()
-  const subjectName = template ? subjects.find((s: { id: number; name: string }) => s.id === template.subjectId)?.name ?? 'Chưa xác định' : 'Chưa xác định'
+  // Use subjectName from instance (already included in response)
+  const subjectName = instance.subjectName || 'Chưa xác định'
   const studentGroupName = groups.find((g: { id: number; name: string }) => g.id === instance.studentGroupId)?.name ?? `Nhóm #${instance.studentGroupId}`
 
-  // Find room number from supervisors
-  const roomNumber = instance.supervisors.length > 0 ? instance.supervisors[0].roomNumber : undefined
-
-  // Fetch student details for attempts
-  const { getUsers } = await import('../adminApi')
-  const users = await getUsers()
-  const studentMap = new Map<number, { name: string; email: string }>()
-  users
-    .filter((u) => u.role === 'STUDENT')
-    .forEach((u) => studentMap.set(u.id, { name: u.fullName, email: u.email }))
-
-  // Map attempts to monitor students
+  // Map attempts to monitor students - use data from attempt response directly
   const students: MonitorStudent[] = attempts.map((attempt) => {
-    const student = studentMap.get(attempt.studentId) ?? { name: attempt.studentName || `Sinh viên #${attempt.studentId}`, email: '' }
-    
     // Calculate time spent in seconds
     let timeSpent: number | undefined
     const startedAt = attempt.startedAt || null
@@ -157,8 +176,8 @@ export const getMonitorData = async (examInstanceId: number): Promise<MonitorDat
 
     return {
       studentId: attempt.studentId,
-      studentName: student.name || attempt.studentName || `Sinh viên #${attempt.studentId}`,
-      email: student.email || '',
+      studentName: attempt.studentName || `Sinh viên #${attempt.studentId}`,
+      email: attempt.studentEmail || '',
       status: mapAttemptStatus(attempt),
       startedAt: startedAt || undefined,
       submittedAt: submittedAt || undefined,
@@ -171,7 +190,6 @@ export const getMonitorData = async (examInstanceId: number): Promise<MonitorDat
     examName: instance.name,
     subjectName,
     studentGroupName,
-    roomNumber,
     startTime: instance.startTime,
     endTime: instance.endTime,
     students,

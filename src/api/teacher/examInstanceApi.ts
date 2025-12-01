@@ -1,6 +1,7 @@
 import type { TeacherExamInstance } from '../../types'
-import { createExamInstance as createExamInstanceApi, getAllExamInstances } from '../examApi'
-import type { CreateExamInstanceRequest, ExamInstanceResponse } from '../../types/models'
+import { createExamInstance as createExamInstanceApi, getAllExamInstances, updateExamInstance as updateExamInstanceApi } from '../examApi'
+import type { CreateExamInstanceRequest, UpdateExamInstanceRequest, ExamInstanceResponse } from '../../types/models'
+import apiClient from '../axiosClient'
 
 export type ExamInstancePayload = {
   name: string
@@ -11,8 +12,10 @@ export type ExamInstancePayload = {
   startTime: string
   endTime: string
   durationMinutes: number
+  totalMarks: number
   shuffleQuestions: boolean
   shuffleOptions: boolean
+  supervisors: Array<{ supervisorId: number }>
 }
 
 const mapStatus = (instance: ExamInstanceResponse): TeacherExamInstance['status'] => {
@@ -29,7 +32,7 @@ const mapInstanceToTeacher = (
   instance: ExamInstanceResponse,
   templateMap?: Map<number, string>,
   groupMap?: Map<number, string>
-): TeacherExamInstance => ({
+): TeacherExamInstance & { supervisors?: any[]; totalMarks?: number } => ({
   id: instance.id,
   name: instance.name,
   templateName: templateMap?.get(instance.templateId) ?? `Template #${instance.templateId}`,
@@ -40,6 +43,8 @@ const mapInstanceToTeacher = (
   shuffleQuestions: instance.shuffleQuestions,
   shuffleOptions: instance.shuffleOptions,
   status: mapStatus(instance),
+  supervisors: instance.supervisors,
+  totalMarks: instance.totalMarks,
 })
 
 export const fetchExamInstances = async (): Promise<TeacherExamInstance[]> => {
@@ -72,18 +77,48 @@ export const createExamInstance = async (payload: ExamInstancePayload): Promise<
     startTime: payload.startTime,
     endTime: payload.endTime,
     durationMinutes: payload.durationMinutes,
+    totalMarks: payload.totalMarks,
     shuffleQuestions: payload.shuffleQuestions,
     shuffleOptions: payload.shuffleOptions,
-    supervisorIds: [],
+    supervisors: payload.supervisors || [],
   }
 
   const created = await createExamInstanceApi(request)
-  
+
   // Use provided names from payload since we already have them
   const templateMap = new Map<number, string>()
   templateMap.set(payload.templateId, payload.templateName)
   const groupMap = new Map<number, string>()
   groupMap.set(payload.studentGroupId, payload.studentGroupName)
-  
+
   return mapInstanceToTeacher(created, templateMap, groupMap)
+}
+
+export const updateExamInstance = async (id: number, payload: ExamInstancePayload): Promise<TeacherExamInstance> => {
+  const request: UpdateExamInstanceRequest = {
+    templateId: payload.templateId,
+    studentGroupId: payload.studentGroupId,
+    name: payload.name,
+    startTime: payload.startTime,
+    endTime: payload.endTime,
+    durationMinutes: payload.durationMinutes,
+    totalMarks: payload.totalMarks,
+    shuffleQuestions: payload.shuffleQuestions,
+    shuffleOptions: payload.shuffleOptions,
+    supervisors: payload.supervisors || [],
+  }
+
+  const updated = await updateExamInstanceApi(id, request)
+
+  // Use provided names from payload since we already have them
+  const templateMap = new Map<number, string>()
+  templateMap.set(payload.templateId, payload.templateName)
+  const groupMap = new Map<number, string>()
+  groupMap.set(payload.studentGroupId, payload.studentGroupName)
+
+  return mapInstanceToTeacher(updated, templateMap, groupMap)
+}
+
+export const deleteExamInstance = async (id: number): Promise<void> => {
+  await apiClient.delete(`/exam-instances/${id}`)
 }

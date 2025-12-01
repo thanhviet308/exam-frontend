@@ -3,16 +3,18 @@ import { Button, Card, Checkbox, Form, Input, Modal, Select, Space, Table, Typog
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getStudentGroups, createStudentGroup, updateStudentGroup, deleteStudentGroup, getUsersByRole } from '../../api/adminApi'
+import { getStudentGroups, createStudentGroup, updateStudentGroup, deleteStudentGroup, getUsersByRole, assignStudentsToGroup, getStudentsInGroup } from '../../api/adminApi'
 import type { StudentGroupResponse, CreateStudentGroupRequest, UserResponse } from '../../types/models'
 import { ErrorState, PageSpinner } from '../../components/Loaders'
 
 const AdminGroupsPage = () => {
   const [modalOpen, setModalOpen] = useState(false)
   const [assignModalOpen, setAssignModalOpen] = useState(false)
+  const [viewStudentsModalOpen, setViewStudentsModalOpen] = useState(false)
   const [editing, setEditing] = useState<StudentGroupResponse | null>(null)
   const [selectedGroup, setSelectedGroup] = useState<number | null>(null)
   const [selectedStudents, setSelectedStudents] = useState<number[]>([])
+  const [viewingGroupId, setViewingGroupId] = useState<number | null>(null)
   const [form] = Form.useForm()
   const [assignForm] = Form.useForm()
   const queryClient = useQueryClient()
@@ -27,6 +29,20 @@ const AdminGroupsPage = () => {
     queryKey: ['admin-students'],
     queryFn: () => getUsersByRole('STUDENT'),
     enabled: assignModalOpen, // Only fetch when modal is open
+  })
+
+  // Get students already in the selected group
+  const studentsInGroupQuery = useQuery<UserResponse[]>({
+    queryKey: ['admin-students-in-group', selectedGroup],
+    queryFn: () => getStudentsInGroup(selectedGroup!),
+    enabled: assignModalOpen && selectedGroup !== null, // Only fetch when modal is open and group is selected
+  })
+
+  // Get students in group for viewing
+  const viewingStudentsQuery = useQuery<UserResponse[]>({
+    queryKey: ['admin-viewing-students-in-group', viewingGroupId],
+    queryFn: () => getStudentsInGroup(viewingGroupId!),
+    enabled: viewStudentsModalOpen && viewingGroupId !== null,
   })
 
   const createMutation = useMutation({
@@ -59,8 +75,20 @@ const AdminGroupsPage = () => {
   })
 
   const assignMutation = useMutation({
-    // TODO: hiện chưa có API backend cho gán sinh viên vào nhóm, tạm thời mock để UI hoạt động
-    mutationFn: async (_: { groupId: number; studentIds: number[] }) => {},
+    mutationFn: ({ groupId, studentIds }: { groupId: number; studentIds: number[] }) =>
+      assignStudentsToGroup(groupId, studentIds),
+    onSuccess: () => {
+      message.success('Đã gán sinh viên vào nhóm')
+      queryClient.invalidateQueries({ queryKey: ['admin-groups'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-students-in-group'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-viewing-students-in-group'] })
+      setAssignModalOpen(false)
+      setSelectedGroup(null)
+      setSelectedStudents([])
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Không thể gán sinh viên. Vui lòng thử lại.')
+    },
   })
 
   const columns: ColumnsType<StudentGroupResponse> = [
@@ -84,6 +112,9 @@ const AdminGroupsPage = () => {
         <Space>
           <Button type="link" onClick={() => handleEdit(record)}>
             Sửa
+          </Button>
+          <Button type="link" onClick={() => handleViewStudents(record.id)}>
+            Xem danh sách
           </Button>
           <Button type="link" onClick={() => handleAssign(record.id)}>
             Gán sinh viên
@@ -144,13 +175,23 @@ const AdminGroupsPage = () => {
     setAssignModalOpen(true)
   }
 
+  const handleViewStudents = (groupId: number) => {
+    setViewingGroupId(groupId)
+    setViewStudentsModalOpen(true)
+  }
+
   const handleAssignSubmit = () => {
     if (!selectedGroup) return
     if (selectedStudents.length === 0) {
       message.warning('Chọn ít nhất một sinh viên')
       return
     }
-    assignMutation.mutate({ groupId: selectedGroup, studentIds: selectedStudents })
+    
+    // Merge: Lấy danh sách sinh viên đã có trong nhóm + sinh viên mới chọn
+    const existingStudentIds = studentsInGroupQuery.data?.map(s => s.id) || []
+    const allStudentIds = [...new Set([...existingStudentIds, ...selectedStudents])] // Remove duplicates
+    
+    assignMutation.mutate({ groupId: selectedGroup, studentIds: allStudentIds })
   }
 
   const handleSubmit = (values: { name: string }) => {
@@ -243,10 +284,52 @@ const AdminGroupsPage = () => {
         <Table
           rowKey="id"
           columns={studentColumns}
-          dataSource={studentsQuery.data}
-          loading={studentsQuery.isLoading}
+          dataSource={
+            studentsQuery.data?.filter(
+              (student) => !studentsInGroupQuery.data?.some((s) => s.id === student.id)
+            ) || []
+          }
+          loading={studentsQuery.isLoading || studentsInGroupQuery.isLoading}
           pagination={{ pageSize: 8 }}
         />
+      </Modal>
+
+      <Modal
+        open={viewStudentsModalOpen}
+        title="Danh sách sinh viên trong nhóm"
+        width={700}
+        onCancel={() => {
+          setViewStudentsModalOpen(false)
+          setViewingGroupId(null)
+        }}
+        footer={[
+          <Button key="close" onClick={() => {
+            setViewStudentsModalOpen(false)
+            setViewingGroupId(null)
+          }}>
+            Đóng
+          </Button>
+        ]}
+        destroyOnClose
+      >
+        {viewingGroupId && (
+          <>
+            <Typography.Paragraph>
+              Nhóm: <Typography.Text strong>{groupsQuery.data?.find(g => g.id === viewingGroupId)?.name}</Typography.Text>
+            </Typography.Paragraph>
+            <Table
+              rowKey="id"
+              columns={[
+                { title: 'Họ tên', dataIndex: 'fullName' },
+                { title: 'Email', dataIndex: 'email' },
+              ]}
+              dataSource={viewingStudentsQuery.data || []}
+              loading={viewingStudentsQuery.isLoading}
+              pagination={{ pageSize: 10 }}
+              locale={{ emptyText: 'Nhóm này chưa có sinh viên nào' }}
+            />
+          </>
+        )}
       </Modal>
     </Space>
   )

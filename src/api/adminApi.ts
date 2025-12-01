@@ -104,9 +104,24 @@ export const deleteStudentGroup = async (id: number): Promise<void> => {
   await apiClient.delete(`/student-groups/${id}`)
 }
 
+export const assignStudentsToGroup = async (groupId: number, studentIds: number[]): Promise<void> => {
+  await apiClient.put(`/student-groups/${groupId}/students`, studentIds)
+}
+
+export const getStudentsInGroup = async (groupId: number): Promise<UserResponse[]> => {
+  const response = await apiClient.get<UserResponse[]>(`/student-groups/${groupId}/students`)
+  return response.data
+}
+
 // Group - Subject - Teacher assignments
 export const getSubjectAssignments = async (): Promise<SubjectAssignment[]> => {
   const response = await apiClient.get<SubjectAssignment[]>('/student-groups/subjects')
+  return response.data
+}
+
+// Get assignments for current teacher (teacher-specific endpoint)
+export const getMySubjectAssignments = async (): Promise<SubjectAssignment[]> => {
+  const response = await apiClient.get<SubjectAssignment[]>('/student-groups/subjects/my')
   return response.data
 }
 
@@ -114,6 +129,17 @@ export const createSubjectAssignment = async (
   request: CreateSubjectAssignmentRequest,
 ): Promise<SubjectAssignment> => {
   const response = await apiClient.post<SubjectAssignment>('/student-groups/subjects', request)
+  return response.data
+}
+
+export const updateSubjectAssignment = async (
+  groupId: number,
+  subjectId: number,
+  request: CreateSubjectAssignmentRequest,
+): Promise<SubjectAssignment> => {
+  const response = await apiClient.put<SubjectAssignment>('/student-groups/subjects', request, {
+    params: { groupId, subjectId },
+  })
   return response.data
 }
 

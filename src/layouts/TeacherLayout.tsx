@@ -1,4 +1,4 @@
-import { Layout, Menu, Typography } from 'antd'
+import { Layout, Menu } from 'antd'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   DashboardOutlined,
@@ -8,6 +8,7 @@ import {
   CalendarOutlined,
   TableOutlined,
 } from '@ant-design/icons'
+import RoleHeader from '../components/common/RoleHeader'
 import { useAuthContext } from '../context/AuthContext'
 
 const { Sider, Header, Content } = Layout
@@ -49,12 +50,12 @@ const TeacherLayout = () => {
         />
       </Sider>
       <Layout>
-        <Header className="app-header teacher-header" style={{ paddingInline: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <Typography.Text strong>{user?.fullName ?? 'User'}</Typography.Text>
-            <Typography.Text type="secondary" style={{ marginLeft: 8 }}>{user?.role ?? ''}</Typography.Text>
-          </div>
-          <Typography.Link onClick={handleLogout}>Đăng xuất</Typography.Link>
+        <Header className="app-header teacher-header" style={{ paddingInline: 24, display: 'flex', alignItems: 'center' }}>
+          <RoleHeader
+            title="Trang giáo viên"
+            userName={user?.fullName ?? 'Giáo viên'}
+            onLogout={handleLogout}
+          />
         </Header>
         <Content className="teacher-content">
           <Outlet />

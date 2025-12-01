@@ -1,4 +1,5 @@
-import { Button, Card, Form, Popconfirm, Select, Space, Table, Typography, message } from 'antd'
+import { useState } from 'react'
+import { Button, Card, Form, Modal, Popconfirm, Select, Space, Table, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -7,6 +8,7 @@ import {
   getUsersByRole,
   getSubjectAssignments,
   createSubjectAssignment,
+  updateSubjectAssignment,
   deleteSubjectAssignment,
 } from '../../api/adminApi'
 import type {
@@ -20,6 +22,9 @@ import { ErrorState, PageSpinner } from '../../components/Loaders'
 
 const AdminAssignPage = () => {
   const [form] = Form.useForm()
+  const [editForm] = Form.useForm()
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editingAssignment, setEditingAssignment] = useState<SubjectAssignment | null>(null)
   const queryClient = useQueryClient()
 
   const assignmentsQuery = useQuery<SubjectAssignment[]>({
@@ -47,11 +52,30 @@ const AdminAssignPage = () => {
     mutationFn: (payload: CreateSubjectAssignmentRequest) => createSubjectAssignment(payload),
     onSuccess: () => {
       message.success('Đã gán môn học cho nhóm')
+      // Invalidate both admin and teacher assignment queries
       queryClient.invalidateQueries({ queryKey: ['admin-assignments'] })
+      queryClient.invalidateQueries({ queryKey: ['subject-assignments'] }) // This will invalidate all teacher queries
       form.resetFields()
     },
     onError: (error: Error) => {
       message.error(error.message || 'Không thể gán môn học. Vui lòng thử lại.')
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ record, payload }: { record: SubjectAssignment; payload: CreateSubjectAssignmentRequest }) =>
+      updateSubjectAssignment(record.groupId, record.subjectId, payload),
+    onSuccess: () => {
+      message.success('Đã cập nhật gán môn học')
+      // Invalidate both admin and teacher assignment queries
+      queryClient.invalidateQueries({ queryKey: ['admin-assignments'] })
+      queryClient.invalidateQueries({ queryKey: ['subject-assignments'] })
+      setEditModalOpen(false)
+      setEditingAssignment(null)
+      editForm.resetFields()
+    },
+    onError: (error: Error) => {
+      message.error(error.message || 'Không thể cập nhật gán môn học. Vui lòng thử lại.')
     },
   })
 
@@ -60,7 +84,9 @@ const AdminAssignPage = () => {
       deleteSubjectAssignment(record.groupId, record.subjectId),
     onSuccess: () => {
       message.success('Đã xóa gán môn học')
+      // Invalidate both admin and teacher assignment queries
       queryClient.invalidateQueries({ queryKey: ['admin-assignments'] })
+      queryClient.invalidateQueries({ queryKey: ['subject-assignments'] })
     },
     onError: (error: Error) => {
       message.error(error.message || 'Không thể xóa gán môn học. Vui lòng thử lại.')
@@ -86,19 +112,35 @@ const AdminAssignPage = () => {
     },
     {
       title: 'Thao tác',
-      width: 100,
+      width: 150,
       render: (_: unknown, record) => (
-        <Popconfirm
-          title="Xác nhận xóa"
-          description="Bạn có chắc muốn xóa gán môn học này?"
-          onConfirm={() => deleteMutation.mutate(record)}
-          okText="Xóa"
-          cancelText="Hủy"
-        >
-          <Button type="link" danger loading={deleteMutation.isPending}>
-            Xóa
+        <Space>
+          <Button
+            type="link"
+            onClick={() => {
+              setEditingAssignment(record)
+              editForm.setFieldsValue({
+                groupId: record.groupId,
+                subjectId: record.subjectId,
+                teacherId: record.teacherId,
+              })
+              setEditModalOpen(true)
+            }}
+          >
+            Sửa
           </Button>
-        </Popconfirm>
+          <Popconfirm
+            title="Xác nhận xóa"
+            description="Bạn có chắc muốn xóa gán môn học này?"
+            onConfirm={() => deleteMutation.mutate(record)}
+            okText="Xóa"
+            cancelText="Hủy"
+          >
+            <Button type="link" danger loading={deleteMutation.isPending}>
+              Xóa
+            </Button>
+          </Popconfirm>
+        </Space>
       ),
     },
   ]
@@ -204,6 +246,69 @@ const AdminAssignPage = () => {
           pagination={{ pageSize: 10 }}
         />
       </Card>
+
+      <Modal
+        open={editModalOpen}
+        title="Sửa gán môn học"
+        onCancel={() => {
+          setEditModalOpen(false)
+          setEditingAssignment(null)
+          editForm.resetFields()
+        }}
+        onOk={() => editForm.submit()}
+        confirmLoading={updateMutation.isPending}
+        destroyOnClose
+      >
+        <Form layout="vertical" form={editForm} onFinish={(values) => {
+          if (!editingAssignment) return
+          const payload: CreateSubjectAssignmentRequest = {
+            groupId: values.groupId,
+            subjectId: values.subjectId,
+            teacherId: values.teacherId,
+          }
+          updateMutation.mutate({ record: editingAssignment, payload })
+        }}>
+          <Form.Item
+            name="groupId"
+            label="Nhóm sinh viên"
+            rules={[{ required: true, message: 'Chọn nhóm sinh viên' }]}
+          >
+            <Select placeholder="Chọn nhóm" loading={groupsQuery.isLoading}>
+              {groupsQuery.data?.map((group) => (
+                <Select.Option key={group.id} value={group.id}>
+                  {group.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="subjectId"
+            label="Môn học"
+            rules={[{ required: true, message: 'Chọn môn học' }]}
+          >
+            <Select placeholder="Chọn môn học" loading={subjectsQuery.isLoading}>
+              {subjectsQuery.data?.map((subject) => (
+                <Select.Option key={subject.id} value={subject.id}>
+                  {subject.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="teacherId"
+            label="Chọn giáo viên"
+            rules={[{ required: true, message: 'Chọn giáo viên' }]}
+          >
+            <Select placeholder="Chọn giáo viên" loading={teachersQuery.isLoading}>
+              {teachersQuery.data?.map((teacher) => (
+                <Select.Option key={teacher.id} value={teacher.id}>
+                  {teacher.fullName} ({teacher.email})
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   )
 }

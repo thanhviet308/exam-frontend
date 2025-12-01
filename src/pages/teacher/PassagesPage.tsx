@@ -17,10 +17,12 @@ import type { ColumnsType } from 'antd/es/table'
 import { createPassage, deletePassage, fetchPassages, updatePassage } from '../../api/teacher/passagesApi'
 import type { PassageFilter, PassagePayload } from '../../api/teacher/passagesApi'
 import type { TeacherPassage } from '../../types'
-import { getSubjects, getChapters } from '../../api/adminApi'
-import type { SubjectResponse, ChapterResponse } from '../../types/models'
+import { getSubjects, getChapters, getMySubjectAssignments } from '../../api/adminApi'
+import { useAuthContext } from '../../context/AuthContext'
+import type { SubjectResponse, ChapterResponse, SubjectAssignment } from '../../types/models'
 
 const PassagesPage = () => {
+  const { user } = useAuthContext()
   const [filters, setFilters] = useState<PassageFilter>({})
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<TeacherPassage | null>(null)
@@ -40,6 +42,15 @@ const PassagesPage = () => {
   const subjectsQuery = useQuery<SubjectResponse[]>({
     queryKey: ['subjects'],
     queryFn: getSubjects,
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  })
+
+  // Use teacher-specific endpoint to get only assignments for current teacher
+  const assignmentsQuery = useQuery<SubjectAssignment[]>({
+    queryKey: ['subject-assignments', user?.id],
+    queryFn: getMySubjectAssignments,
+    enabled: !!user && user.role === 'TEACHER',
     refetchOnWindowFocus: false,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   })
@@ -68,8 +79,13 @@ const PassagesPage = () => {
       }
       return createPassage(values)
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       message.success(editing ? 'Cập nhật đoạn văn thành công' : 'Thêm đoạn văn thành công')
+      // Set filter to match the passage that was just added/updated
+      setFilters({
+        subjectId: variables.subjectId,
+        chapterId: variables.chapterId,
+      })
       queryClient.invalidateQueries({ queryKey: ['teacher-passages'] })
       form.resetFields()
       setEditing(null)
@@ -137,8 +153,18 @@ const PassagesPage = () => {
     form.resetFields()
   }
 
+  // Calculate unique subjects that teacher is responsible for (based on assignments)
+  const assignments = assignmentsQuery.data || []
+  const teacherSubjectIds = new Set<number>()
+  assignments.forEach((a) => {
+    if (a.subjectId) teacherSubjectIds.add(a.subjectId)
+  })
+
+  // Filter subjects to only show those the teacher is responsible for
+  const availableSubjects = (subjectsQuery.data || []).filter((subject) => teacherSubjectIds.has(subject.id))
+
   const handleSubmit = (values: { subjectId: number; chapterId: number; content: string }) => {
-    const subject = subjectsQuery.data?.find((s) => s.id === values.subjectId)
+    const subject = availableSubjects.find((s) => s.id === values.subjectId)
     const chapter = formChaptersQuery.data?.find((c) => c.id === values.chapterId)
     const payload: PassagePayload = {
       subjectId: values.subjectId,
@@ -156,7 +182,13 @@ const PassagesPage = () => {
         Quản lý đoạn văn
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        Tạo và lưu trữ các đoạn văn dùng chung cho nhiều câu hỏi trắc nghiệm.
+        Tạo và lưu trữ các đoạn văn dùng chung cho nhiều câu hỏi trắc nghiệm dạng đọc hiểu.
+        <br />
+        <Typography.Text strong style={{ color: '#1890ff' }}>
+          💡 Cách sử dụng:
+        </Typography.Text>
+        {' '}Sau khi tạo đoạn văn, khi tạo câu hỏi trong "Ngân hàng câu hỏi", bạn có thể chọn đoạn văn này. 
+        Khi học sinh làm bài, họ sẽ đọc đoạn văn trước, sau đó trả lời các câu hỏi liên quan đến đoạn văn đó.
       </Typography.Paragraph>
       <Card style={{ borderRadius: 16 }}>
         <Space wrap align="center" style={{ width: '100%' }}>
@@ -171,7 +203,7 @@ const PassagesPage = () => {
                 setFilters((prev) => ({ ...prev, subjectId: value, chapterId: undefined }))
               }}
             >
-              {subjectsQuery.data?.map((subject) => (
+              {availableSubjects.map((subject) => (
                 <Select.Option key={subject.id} value={subject.id}>
                   {subject.name}
                 </Select.Option>
@@ -239,7 +271,7 @@ const PassagesPage = () => {
                 form.setFieldsValue({ chapterId: undefined })
               }}
             >
-              {subjectsQuery.data?.map((subject) => (
+              {availableSubjects.map((subject) => (
                 <Select.Option key={subject.id} value={subject.id}>
                   {subject.name}
                 </Select.Option>

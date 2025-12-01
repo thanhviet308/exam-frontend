@@ -60,14 +60,12 @@ export interface ExamTemplate {
   subjectId: number
   name: string
   totalQuestions: number
-  durationMinutes: number
   structures: ExamTemplateStructure[]
 }
 
 export interface ExamInstanceSupervisor {
   userId: number
   fullName: string
-  roomNumber?: string
 }
 
 export interface ExamInstance {
@@ -104,6 +102,8 @@ export interface StartAttemptQuestion {
   content: string
   questionType: string
   marks: number
+  passageId?: number
+  passageContent?: string
   options: StartAttemptQuestionOption[]
 }
 
@@ -164,7 +164,6 @@ export interface TeacherTemplate {
   subjectId: number
   subjectName: string
   totalQuestions: number
-  durationMinutes: number
   createdAt: string
   structure: Array<{ chapterId: number; chapterName: string; numQuestion: number }>
 }

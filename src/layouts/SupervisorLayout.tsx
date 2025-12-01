@@ -1,6 +1,6 @@
 import { Layout, Menu } from 'antd'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
-import { DashboardOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { DashboardOutlined, UnorderedListOutlined, BarChartOutlined } from '@ant-design/icons'
 import RoleHeader from '../components/common/RoleHeader'
 import { useAuthContext } from '../context/AuthContext'
 
@@ -9,6 +9,7 @@ const { Sider, Header, Content } = Layout
 const supervisorMenu = [
   { key: '/supervisor', label: <Link to="/supervisor">Tổng quan</Link>, icon: <DashboardOutlined /> },
   { key: '/supervisor/sessions', label: <Link to="/supervisor/sessions">Danh sách ca thi</Link>, icon: <UnorderedListOutlined /> },
+  { key: '/supervisor/violations', label: <Link to="/supervisor/violations">Thống kê vi phạm</Link>, icon: <BarChartOutlined /> },
 ]
 
 const SupervisorLayout = () => {
@@ -48,8 +49,10 @@ const SupervisorLayout = () => {
             onLogout={handleLogout}
           />
         </Header>
-        <Content className="teacher-content">
-          <Outlet />
+        <Content className="teacher-content" style={{ display: 'flex' }}>
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     </Layout>

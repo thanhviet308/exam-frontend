@@ -17,7 +17,7 @@ export type QuestionFilter = {
   subjectId?: number
   chapterId?: number
   questionType?: 'MCQ' | 'FILL'
-  difficulty?: number
+  difficulty?: 'BASIC' | 'ADVANCED'
 }
 
 export type QuestionPayload = Omit<TeacherQuestion, 'id' | 'createdAt' | 'subjectName' | 'chapterName'> & {
@@ -25,13 +25,11 @@ export type QuestionPayload = Omit<TeacherQuestion, 'id' | 'createdAt' | 'subjec
   chapterName?: string
 }
 
-const mapDifficultyToLevel = (difficulty?: string | null): number => {
-  if (!difficulty) return 3
+const mapDifficultyToLevel = (difficulty?: string | null): string => {
+  if (!difficulty) return 'BASIC'
   const normalized = difficulty.toUpperCase()
-  if (normalized === 'EASY') return 2
-  if (normalized === 'MEDIUM') return 3
-  if (normalized === 'HARD') return 4
-  return 3
+  if (normalized === 'ADVANCED' || normalized === 'NÂNG CAO') return 'ADVANCED'
+  return 'BASIC' // Mặc định là cơ bản
 }
 
 const mapQuestionToTeacher = (
@@ -104,13 +102,13 @@ export const createQuestion = async (payload: QuestionPayload): Promise<TeacherQ
     content: payload.content,
     questionType: payload.questionType as QuestionType,
     difficulty: undefined,
-    marks: payload.marks,
+    marks: undefined, // Không gửi marks, backend sẽ set mặc định là 1
     active: true,
     options: payload.questionType === 'MCQ'
       ? payload.options?.map((opt) => ({
-          content: opt.content,
-          correct: opt.isCorrect,
-        }))
+        content: opt.content,
+        correct: opt.isCorrect,
+      }))
       : undefined,
     answers: payload.questionType === 'FILL'
       ? payload.answers?.map((answer) => ({ answer }))
@@ -128,13 +126,13 @@ export const updateQuestion = async (id: number, payload: QuestionPayload): Prom
     content: payload.content,
     questionType: payload.questionType as QuestionType,
     difficulty: undefined,
-    marks: payload.marks,
+    marks: undefined, // Không gửi marks, backend sẽ set mặc định là 1
     active: true,
     options: payload.questionType === 'MCQ'
       ? payload.options?.map((opt) => ({
-          content: opt.content,
-          correct: opt.isCorrect,
-        }))
+        content: opt.content,
+        correct: opt.isCorrect,
+      }))
       : undefined,
     answers: payload.questionType === 'FILL'
       ? payload.answers?.map((answer) => ({ answer }))
@@ -157,7 +155,7 @@ export const bulkCreateQuestions = async (
   // Fetch subjects and chapters to map correctly
   const subjects = await getSubjects()
   const allChaptersMap = new Map<number, { subjectName: string; chapterName: string }>()
-  
+
   await Promise.all(
     subjects.map(async (subject) => {
       try {
@@ -177,7 +175,7 @@ export const bulkCreateQuestions = async (
       const chInfo = allChaptersMap.get(q.chapterId)
       return chInfo?.subjectName === s.name
     })
-    
+
     return {
       id: q.id,
       subjectId: subject?.id ?? 0,

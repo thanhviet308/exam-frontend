@@ -24,6 +24,7 @@ import StudentExamResultPage from '../pages/student/StudentExamResultPage'
 import SupervisorDashboard from '../pages/supervisor/SupervisorDashboard'
 import SupervisorExamSessionsPage from '../pages/supervisor/SupervisorExamSessionsPage'
 import SupervisorMonitorPage from '../pages/supervisor/SupervisorMonitorPage'
+import SupervisorViolationStatsPage from '../pages/supervisor/SupervisorViolationStatsPage'
 import LoginPage from '../pages/auth/LoginPage'
 import RegisterPage from '../pages/auth/RegisterPage'
 import UnauthorizedPage from '../pages/common/UnauthorizedPage'
@@ -73,6 +74,7 @@ const AppRouter = () => (
         <Route path="/supervisor/*" element={<SupervisorLayout />}>
           <Route index element={<SupervisorDashboard />} />
           <Route path="sessions" element={<SupervisorExamSessionsPage />} />
+          <Route path="violations" element={<SupervisorViolationStatsPage />} />
           <Route path="monitor/:examInstanceId" element={<SupervisorMonitorPage />} />
         </Route>
       </Route>

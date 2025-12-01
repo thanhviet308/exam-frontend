@@ -82,17 +82,36 @@ export const submitExam = async (_payload: SubmitExamPayload): Promise<{ success
 export const getExamResult = async (examInstanceId: number): Promise<ExamResult> => {
   // We need attemptId, not examInstanceId. This needs refactoring.
   // For now, get from history
-  const history = await getMyHistory()
-  const attempt = history.find((a) => a.examInstanceId === examInstanceId)
-  if (!attempt) {
-    throw new Error('Attempt not found')
-  }
-  const detail = await getAttemptDetail(attempt.attemptId)
-  return {
-    ...detail,
-    totalMarks: detail.questionResults.reduce((sum, q) => sum + q.marks, 0),
-    correctAnswers: detail.questionResults.filter((q) => q.isCorrect).length,
-    totalQuestions: detail.questionResults.length,
+  try {
+    const history = await getMyHistory()
+    const attempt = history.find((a) => a.examInstanceId === examInstanceId)
+    if (!attempt) {
+      throw new Error('Bạn chưa nộp bài thi này hoặc không tìm thấy kết quả.')
+    }
+    
+    // Only get detail if attempt is submitted or graded
+    if (attempt.status !== 'SUBMITTED' && attempt.status !== 'GRADED') {
+      throw new Error('Bài thi này chưa được nộp.')
+    }
+    
+    const detail = await getAttemptDetail(attempt.attemptId)
+    
+    // Ensure questionResults is an array
+    const questionResults = detail.questionResults || []
+    
+    return {
+      ...detail,
+      questionResults,
+      totalMarks: questionResults.reduce((sum, q) => sum + (q.marks || 0), 0),
+      correctAnswers: questionResults.filter((q) => q.isCorrect).length,
+      totalQuestions: questionResults.length,
+    }
+  } catch (error) {
+    // Re-throw with a more user-friendly message
+    if (error instanceof Error) {
+      throw error
+    }
+    throw new Error('Có lỗi xảy ra khi tải kết quả bài thi.')
   }
 }
 

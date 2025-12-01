@@ -120,7 +120,6 @@ export interface CreateQuestionRequest {
   content: string
   questionType: QuestionType
   difficulty?: string
-  marks: number
   active: boolean
   options?: QuestionOptionRequest[]
   answers?: QuestionAnswerRequest[]
@@ -140,6 +139,8 @@ export interface ExamStructurePayload {
   id: number
   chapterId: number
   numQuestion: number
+  numBasic: number
+  numAdvanced: number
 }
 
 export interface ExamTemplateResponse {
@@ -147,20 +148,26 @@ export interface ExamTemplateResponse {
   subjectId: number
   name: string
   totalQuestions: number
-  durationMinutes: number
   structures: ExamStructurePayload[]
 }
 
 export interface ExamStructureRequest {
   chapterId: number
   numQuestion: number
+  numBasic: number
+  numAdvanced: number
 }
 
 export interface CreateExamTemplateRequest {
   subjectId: number
   name: string
   totalQuestions: number
-  durationMinutes: number
+  structures: ExamStructureRequest[]
+}
+
+export interface UpdateExamTemplateRequest {
+  name: string
+  totalQuestions: number
   structures: ExamStructureRequest[]
 }
 
@@ -168,7 +175,6 @@ export interface CreateExamTemplateRequest {
 export interface SupervisorPayload {
   userId: number
   fullName: string
-  roomNumber?: string
 }
 
 export interface ExamInstanceResponse {
@@ -176,9 +182,11 @@ export interface ExamInstanceResponse {
   templateId: number
   studentGroupId: number
   name: string
+  subjectName: string
   startTime: string
   endTime: string
   durationMinutes: number
+  totalMarks: number
   shuffleQuestions: boolean
   shuffleOptions: boolean
   supervisors: SupervisorPayload[]
@@ -191,9 +199,23 @@ export interface CreateExamInstanceRequest {
   startTime: string
   endTime: string
   durationMinutes: number
+  totalMarks: number
   shuffleQuestions: boolean
   shuffleOptions: boolean
-  supervisorIds: number[]
+  supervisors: Array<{ supervisorId: number }>
+}
+
+export interface UpdateExamInstanceRequest {
+  templateId: number
+  studentGroupId: number
+  name: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  totalMarks: number
+  shuffleQuestions: boolean
+  shuffleOptions: boolean
+  supervisors: Array<{ supervisorId: number }>
 }
 
 // Exam Attempt types
@@ -204,6 +226,7 @@ export interface ExamAttemptResponse {
   examInstanceId: number
   studentId: number
   studentName: string
+  studentEmail: string
   startedAt?: string
   submittedAt?: string
   score?: number
@@ -220,6 +243,8 @@ export interface ExamQuestionView {
   content: string
   questionType: string
   marks: number
+  passageId?: number
+  passageContent?: string
   options: OptionView[]
 }
 

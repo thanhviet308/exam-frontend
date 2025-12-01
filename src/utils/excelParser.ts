@@ -6,9 +6,10 @@ export interface ExcelQuestionRow {
   // Các cột trong Excel
   'Môn học'?: string
   'Chương'?: string
+  'Đoạn văn'?: string // ID hoặc nội dung đoạn văn (tùy chọn)
   'Nội dung'?: string
   'Loại câu hỏi'?: string // MCQ hoặc FILL
-  'Độ khó'?: string | number // 1-5 hoặc EASY/MEDIUM/HARD
+  'Độ khó'?: string | number // "Cơ bản"/"BASIC" hoặc "Nâng cao"/"ADVANCED" (hoặc số: 1-3 = Cơ bản, 4-5 = Nâng cao)
   'Điểm'?: number
   'Phương án 1'?: string
   'Phương án 2'?: string
@@ -33,6 +34,7 @@ export function parseExcelFile(
   subjectMap: Map<string, number>, // Map từ subject name -> subjectId
   chapterMap: Map<string, number>, // Map từ chapter name -> chapterId
   availableChapters?: Array<{ subjectName: string; chapterName: string }>, // For better error messages
+  passageMap?: Map<string, number>, // Map từ passage content (first 50 chars) hoặc ID -> passageId
 ): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -53,6 +55,17 @@ export function parseExcelFile(
         const questions: CreateQuestionRequest[] = []
         const errors: Array<{ row: number; error: string }> = []
 
+        // Log để debug
+        console.log('Total rows in Excel:', rows.length)
+        if (rows.length > 0) {
+          console.log('First row keys:', Object.keys(rows[0]))
+          console.log('First row sample:', {
+            'Môn học': rows[0]['Môn học'],
+            'Chương': rows[0]['Chương'],
+            'Nội dung': rows[0]['Nội dung']?.toString().substring(0, 50),
+          })
+        }
+
         rows.forEach((row, index) => {
           try {
             const rowNum = index + 2 // +2 vì index bắt đầu từ 0 và có header row
@@ -63,7 +76,6 @@ export function parseExcelFile(
             const content = row['Nội dung']?.toString().trim()
             const questionType = row['Loại câu hỏi']?.toString().trim().toUpperCase()
             const difficulty = row['Độ khó']
-            const marks = row['Điểm'] ? Number(row['Điểm']) : 1
 
             // Validate required fields
             if (!subjectName) {
@@ -82,7 +94,7 @@ export function parseExcelFile(
             // Tìm subjectId và chapterId (case-insensitive, partial match)
             const subjectNameLower = subjectName.toLowerCase().trim()
             let subjectId = subjectMap.get(subjectNameLower)
-            
+
             // Try partial matching if exact match fails
             if (!subjectId) {
               // Try matching first two words (e.g., "Vật lý" from "Vật lý 10")
@@ -92,34 +104,42 @@ export function parseExcelFile(
                 subjectId = subjectMap.get(firstTwoParts)
               }
             }
-            
+
             if (!subjectId) {
-              errors.push({ 
-                row: rowNum, 
-                error: `Không tìm thấy môn học: "${subjectName}". Vui lòng kiểm tra lại tên môn học trong file.` 
+              // Log để debug
+              if (index < 3) {
+                console.log(`Row ${rowNum} - Subject not found:`, {
+                  subjectName,
+                  subjectNameLower,
+                  availableKeys: Array.from(subjectMap.keys()).slice(0, 10),
+                })
+              }
+              errors.push({
+                row: rowNum,
+                error: `Không tìm thấy môn học: "${subjectName}". Các môn có sẵn: ${Array.from(subjectMap.keys()).slice(0, 5).join(', ')}...`
               })
               return
             }
 
             // Find chapterId (case-insensitive, partial match)
             const chapterNameLower = chapterName.toLowerCase().trim()
-            
+
             // Try multiple matching strategies
-            let chapterId = 
+            let chapterId =
               // 1. Try exact match with subject prefix
               chapterMap.get(`${subjectNameLower}_${chapterNameLower}`) ||
               // 2. Try exact match without subject prefix
               chapterMap.get(chapterNameLower)
-            
+
             // Try partial matching if exact match fails
             if (!chapterId) {
               // 3. Try matching after removing "Chương X:" or "Chương X -" prefix
               const cleanedChapterName = chapterNameLower.replace(/^chương\s*\d+\s*[:\-]?\s*/i, '').trim()
               if (cleanedChapterName) {
                 chapterId = chapterMap.get(`${subjectNameLower}_${cleanedChapterName}`) ||
-                           chapterMap.get(cleanedChapterName)
+                  chapterMap.get(cleanedChapterName)
               }
-              
+
               // 4. Try matching parts separated by : or -
               if (!chapterId) {
                 const parts = chapterNameLower.split(/[:\-]/)
@@ -128,12 +148,12 @@ export function parseExcelFile(
                   // Skip "Chương X" parts
                   if (trimmedPart.length > 2 && !/^chương\s*\d+$/i.test(trimmedPart)) {
                     chapterId = chapterMap.get(`${subjectNameLower}_${trimmedPart}`) ||
-                               chapterMap.get(trimmedPart)
+                      chapterMap.get(trimmedPart)
                     if (chapterId) break
                   }
                 }
               }
-              
+
               // 5. Try matching by removing "Chương" and numbers, keep only meaningful parts
               if (!chapterId) {
                 const meaningfulParts = chapterNameLower
@@ -142,45 +162,83 @@ export function parseExcelFile(
                 if (meaningfulParts.length > 0) {
                   const meaningfulName = meaningfulParts.join(' ')
                   chapterId = chapterMap.get(`${subjectNameLower}_${meaningfulName}`) ||
-                             chapterMap.get(meaningfulName)
+                    chapterMap.get(meaningfulName)
                 }
               }
             }
-            
+
             if (!chapterId) {
               // Find available chapters for this subject to show in error
               let availableChaptersMsg = ''
               if (availableChapters) {
                 const subjectChapters = availableChapters.filter(
-                  ch => ch.subjectName.toLowerCase().includes(subjectNameLower) || 
-                        subjectNameLower.includes(ch.subjectName.toLowerCase())
+                  ch => ch.subjectName.toLowerCase().includes(subjectNameLower) ||
+                    subjectNameLower.includes(ch.subjectName.toLowerCase())
                 ).map(ch => ch.chapterName)
                 if (subjectChapters.length > 0) {
                   availableChaptersMsg = ` Các chương có sẵn: ${subjectChapters.slice(0, 5).join(', ')}${subjectChapters.length > 5 ? '...' : ''}`
                 }
               }
-              errors.push({ 
-                row: rowNum, 
-                error: `Không tìm thấy chương: "${chapterName}" trong môn "${subjectName}".${availableChaptersMsg} Vui lòng sửa tên chương trong file Excel để khớp với tên chương trong database.` 
+              
+              // Log để debug
+              if (index < 3) {
+                console.log(`Row ${rowNum} - Chapter not found:`, {
+                  subjectName,
+                  chapterName,
+                  chapterNameLower,
+                  availableKeys: Array.from(chapterMap.keys()).filter(k => k.includes(subjectNameLower)).slice(0, 5),
+                })
+              }
+              
+              errors.push({
+                row: rowNum,
+                error: `Không tìm thấy chương: "${chapterName}" trong môn "${subjectName}".${availableChaptersMsg} Vui lòng sửa tên chương trong file Excel để khớp với tên chương trong database.`
               })
               return
             }
 
-            // Parse question type
-            const qType = questionType === 'MCQ' || questionType === 'TRẮC NGHIỆM' ? 'MCQ' : 'FILL'
+            // Parse passage (optional)
+            let passageId: number | undefined = undefined
+            const passageValue = row['Đoạn văn']?.toString().trim()
+            if (passageValue) {
+              // Try to parse as ID first
+              const numericId = Number(passageValue)
+              if (!isNaN(numericId) && passageMap) {
+                passageId = passageMap.get(String(numericId)) || passageMap.get(passageValue.toLowerCase())
+              } else if (passageMap) {
+                // Try to match by content (first 50 chars)
+                const passageKey = passageValue.toLowerCase().substring(0, 50)
+                passageId = passageMap.get(passageKey)
+              }
+              // If not found, just skip (passage is optional)
+            }
 
-            // Parse difficulty
-            let difficultyStr: string | undefined
+            // Parse question type (hỗ trợ cả tiếng Việt và tiếng Anh)
+            let qType: 'MCQ' | 'FILL'
+            const questionTypeUpper = questionType?.toUpperCase() || ''
+            if (
+              questionTypeUpper === 'MCQ' ||
+              questionTypeUpper === 'TRẮC NGHIỆM' ||
+              questionTypeUpper === 'TRAC NGHIEM' ||
+              questionTypeUpper === 'TRẮC NGHIỆM NHIỀU LỰA CHỌN'
+            ) {
+              qType = 'MCQ'
+            } else {
+              qType = 'FILL'
+            }
+
+            // Parse difficulty (chỉ có 2 mức: Cơ bản và Nâng cao)
+            let difficultyStr: string | undefined = 'BASIC' // Mặc định là cơ bản
             if (difficulty) {
-              if (typeof difficulty === 'number') {
-                if (difficulty >= 1 && difficulty <= 2) difficultyStr = 'EASY'
-                else if (difficulty >= 3 && difficulty <= 4) difficultyStr = 'MEDIUM'
-                else if (difficulty === 5) difficultyStr = 'HARD'
-              } else {
-                const diffUpper = difficulty.toString().toUpperCase()
-                if (['EASY', 'DỄ'].includes(diffUpper)) difficultyStr = 'EASY'
-                else if (['MEDIUM', 'TRUNG BÌNH'].includes(diffUpper)) difficultyStr = 'MEDIUM'
-                else if (['HARD', 'KHÓ'].includes(diffUpper)) difficultyStr = 'HARD'
+              const diffUpper = difficulty.toString().toUpperCase()
+              if (['ADVANCED', 'NÂNG CAO', 'NANG CAO'].includes(diffUpper)) {
+                difficultyStr = 'ADVANCED'
+              } else if (['BASIC', 'CƠ BẢN', 'CO BAN'].includes(diffUpper)) {
+                difficultyStr = 'BASIC'
+              }
+              // Nếu là số, coi như cơ bản (1-3) hoặc nâng cao (4-5)
+              else if (typeof difficulty === 'number') {
+                difficultyStr = difficulty >= 4 ? 'ADVANCED' : 'BASIC'
               }
             }
 
@@ -218,10 +276,10 @@ export function parseExcelFile(
 
               questions.push({
                 chapterId,
+                passageId,
                 content,
                 questionType: 'MCQ',
                 difficulty: difficultyStr,
-                marks,
                 active: true,
                 options,
                 answers: undefined,
@@ -244,10 +302,10 @@ export function parseExcelFile(
 
               questions.push({
                 chapterId,
+                passageId,
                 content,
                 questionType: 'FILL',
                 difficulty: difficultyStr,
-                marks,
                 active: true,
                 options: undefined,
                 answers,
@@ -280,10 +338,10 @@ export function generateSampleExcel(): void {
     {
       'Môn học': 'Vật lý',
       'Chương': 'Chương 1: Cơ học',
+      'Đoạn văn': '', // Tùy chọn: ID đoạn văn hoặc để trống
       'Nội dung': 'Vận tốc của một vật được tính bằng công thức nào?',
-      'Loại câu hỏi': 'MCQ',
-      'Độ khó': 2,
-      'Điểm': 1,
+      'Loại câu hỏi': 'Trắc nghiệm',
+      'Độ khó': 'Cơ bản',
       'Phương án 1': 'v = s/t',
       'Phương án 2': 'v = s*t',
       'Phương án 3': 'v = t/s',
@@ -293,10 +351,23 @@ export function generateSampleExcel(): void {
     {
       'Môn học': 'Vật lý',
       'Chương': 'Chương 1: Cơ học',
+      'Đoạn văn': '1', // Ví dụ: ID đoạn văn hoặc để trống nếu không có
+      'Nội dung': 'Dựa vào đoạn văn trên, vận tốc trung bình được tính như thế nào?',
+      'Loại câu hỏi': 'Trắc nghiệm',
+      'Độ khó': 'Nâng cao',
+      'Phương án 1': 'v = s/t',
+      'Phương án 2': 'v = s*t',
+      'Phương án 3': 'v = t/s',
+      'Phương án 4': 'v = s²',
+      'Đáp án đúng': 'A',
+    },
+    {
+      'Môn học': 'Vật lý',
+      'Chương': 'Chương 1: Cơ học',
+      'Đoạn văn': '', // Tùy chọn
       'Nội dung': 'Điền vào chỗ trống: Lực được ký hiệu bằng chữ cái ____',
-      'Loại câu hỏi': 'FILL',
-      'Độ khó': 1,
-      'Điểm': 1,
+      'Loại câu hỏi': 'Điền',
+      'Độ khó': 'Cơ bản',
       'Đáp án 1': 'F',
       'Đáp án 2': 'f',
       'Đáp án 3': 'F hoặc f',

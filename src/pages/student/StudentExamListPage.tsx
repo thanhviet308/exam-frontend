@@ -3,6 +3,8 @@ import type { ColumnsType } from 'antd/es/table'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { getStudentExams, type StudentExam } from '../../api/student/examsApi'
+import { getMyHistory } from '../../api/examApi'
+import type { ExamAttemptResponse } from '../../types/models'
 import dayjs from 'dayjs'
 
 const StudentExamListPage = () => {
@@ -12,9 +14,19 @@ const StudentExamListPage = () => {
     queryFn: getStudentExams,
   })
 
+  const historyQuery = useQuery<ExamAttemptResponse[]>({
+    queryKey: ['student-exam-history'],
+    queryFn: getMyHistory,
+  })
+
   const columns: ColumnsType<StudentExam> = [
     { title: 'Tên kỳ thi', dataIndex: 'name', width: 250 },
-    { title: 'Môn học', dataIndex: 'subjectName', width: 150 },
+    {
+      title: 'Môn học',
+      dataIndex: 'subjectName',
+      width: 150,
+      render: (subjectName: string | undefined) => subjectName || '-',
+    },
     {
       title: 'Thời gian bắt đầu',
       dataIndex: 'startTime',
@@ -37,7 +49,15 @@ const StudentExamListPage = () => {
       title: 'Trạng thái',
       dataIndex: 'status',
       width: 150,
-      render: (status: StudentExam['status']) => {
+      render: (status: StudentExam['status'], record) => {
+        // Check if student has submitted this exam
+        const attempt = historyQuery.data?.find((a) => a.examInstanceId === record.id)
+        const isSubmitted = attempt?.status === 'SUBMITTED' || attempt?.status === 'GRADED'
+        
+        if (isSubmitted) {
+          return <Tag color="success">Đã hoàn thành</Tag>
+        }
+        
         const colorMap = {
           NOT_STARTED: 'default',
           ONGOING: 'processing',
@@ -53,12 +73,18 @@ const StudentExamListPage = () => {
     },
     {
       title: 'Thao tác',
-      width: 120,
+      width: 150,
       render: (_: unknown, record) => {
-        const canStart = record.status === 'ONGOING' || record.status === 'NOT_STARTED'
+        // Check if student has submitted this exam
+        const attempt = historyQuery.data?.find((a) => a.examInstanceId === record.id)
+        const isSubmitted = attempt?.status === 'SUBMITTED' || attempt?.status === 'GRADED'
+        const canStart = (record.status === 'ONGOING' || record.status === 'NOT_STARTED') && !isSubmitted
+        
         return (
           <Space>
-            {canStart ? (
+            {isSubmitted ? (
+              <Tag color="success">Đã hoàn thành</Tag>
+            ) : canStart ? (
               <Button type="primary" onClick={() => navigate(`/student/exams/${record.id}/do`)}>
                 Vào thi
               </Button>
@@ -79,7 +105,7 @@ const StudentExamListPage = () => {
           rowKey="id"
           columns={columns}
           dataSource={examsQuery.data}
-          loading={examsQuery.isLoading}
+          loading={examsQuery.isLoading || historyQuery.isLoading}
           pagination={{ pageSize: 10 }}
         />
       </Card>

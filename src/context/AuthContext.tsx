@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { login as loginApi, refreshToken as refreshTokenApi } from '../api/authApi'
-import type { TokenResponse, UserRole } from '../types/models'
+import apiClient from '../api/axiosClient'
+import type { TokenResponse, UserRole, UserResponse } from '../types/models'
 
 export interface AuthUser {
   id: number
@@ -16,6 +17,7 @@ type AuthContextValue = {
   initialized: boolean
   login: (credentials: { email: string; password: string }) => Promise<AuthUser>
   logout: () => void
+  updateUser: (userData: Partial<AuthUser>) => void
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -25,6 +27,7 @@ const AuthContext = createContext<AuthContextValue>({
   initialized: false,
   login: async () => Promise.reject(),
   logout: () => {},
+  updateUser: () => {},
 })
 
 const AUTH_STORAGE_KEY = 'exam_center_auth'
@@ -60,6 +63,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setToken] = useState<string | null>(null)
    const [initialized, setInitialized] = useState(false)
 
+  // Fetch user info from server to get latest data
+  const fetchUserInfo = useCallback(async (): Promise<AuthUser | null> => {
+    try {
+      const response = await apiClient.get<UserResponse>('/users/me')
+      const userData: AuthUser = {
+        id: response.data.id,
+        fullName: response.data.fullName,
+        email: response.data.email,
+        role: response.data.role,
+      }
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userData))
+      return userData
+    } catch (error) {
+      console.error('Failed to fetch user info:', error)
+      return null
+    }
+  }, [])
+
   useEffect(() => {
     const initAuth = async () => {
       const stored = getStoredAuth()
@@ -71,18 +92,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           if (refreshToken) {
             try {
               const tokenResponse = await refreshTokenApi({ refreshToken })
-              // Persist auth directly in useEffect
-              const newUser: AuthUser = {
-                id: tokenResponse.userId,
-                fullName: tokenResponse.fullName,
-                email: stored.user.email, // Keep existing email
-                role: tokenResponse.role,
-              }
-              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser))
               localStorage.setItem(TOKEN_STORAGE_KEY, tokenResponse.accessToken)
               localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, tokenResponse.refreshToken)
-              setUser(newUser)
-              setToken(tokenResponse.accessToken)
+              
+              // Fetch latest user info from server (token is automatically added by interceptor)
+              const userData = await fetchUserInfo()
+              if (userData) {
+                setUser(userData)
+                setToken(tokenResponse.accessToken)
+              } else {
+                // Fallback to token response if fetch fails
+                const newUser: AuthUser = {
+                  id: tokenResponse.userId,
+                  fullName: tokenResponse.fullName,
+                  email: stored.user.email,
+                  role: tokenResponse.role,
+                }
+                localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser))
+                setUser(newUser)
+                setToken(tokenResponse.accessToken)
+              }
               setInitialized(true)
               return
             } catch (error) {
@@ -106,14 +135,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             return
           }
         }
-        // Token is still valid
-        setUser(stored.user)
-        setToken(stored.token)
+        // Token is still valid - fetch latest user info from server (token is automatically added by interceptor)
+        const userData = await fetchUserInfo()
+        if (userData) {
+          setUser(userData)
+          setToken(stored.token)
+        } else {
+          // Fallback to stored user if fetch fails
+          setUser(stored.user)
+          setToken(stored.token)
+        }
       }
       setInitialized(true)
     }
     initAuth()
-  }, [])
+  }, [fetchUserInfo])
 
   const persistAuth = useCallback((tokenResponse: TokenResponse) => {
     const user: AuthUser = {
@@ -140,21 +176,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const login = useCallback(
     async (credentials: { email: string; password: string }) => {
       const tokenResponse = await loginApi(credentials)
-      const user: AuthUser = {
-        id: tokenResponse.userId,
-        fullName: tokenResponse.fullName,
-        email: credentials.email, // Store email from login
-        role: tokenResponse.role,
+      localStorage.setItem(TOKEN_STORAGE_KEY, tokenResponse.accessToken)
+      localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, tokenResponse.refreshToken)
+      
+      // Fetch latest user info from server to ensure we have the most up-to-date data (token is automatically added by interceptor)
+      const userData = await fetchUserInfo()
+      if (userData) {
+        setUser(userData)
+        setToken(tokenResponse.accessToken)
+        return userData
+      } else {
+        // Fallback to token response if fetch fails
+        const user: AuthUser = {
+          id: tokenResponse.userId,
+          fullName: tokenResponse.fullName,
+          email: credentials.email,
+          role: tokenResponse.role,
+        }
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user))
+        setUser(user)
+        setToken(tokenResponse.accessToken)
+        return user
       }
-      persistAuth(tokenResponse)
-      return user
     },
-    [persistAuth],
+    [fetchUserInfo],
   )
 
   const logout = useCallback(() => {
     clearAuth()
   }, [clearAuth])
+
+  const updateUser = useCallback((userData: Partial<AuthUser>) => {
+    setUser((currentUser) => {
+      if (!currentUser) return currentUser
+      const updatedUser: AuthUser = {
+        ...currentUser,
+        ...userData,
+      }
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser))
+      return updatedUser
+    })
+  }, [])
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -164,8 +226,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       initialized,
       login,
       logout,
+      updateUser,
     }),
-    [user, token, initialized, login, logout],
+    [user, token, initialized, login, logout, updateUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

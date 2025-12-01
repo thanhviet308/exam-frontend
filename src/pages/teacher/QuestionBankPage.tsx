@@ -7,6 +7,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Radio,
   Select,
   Space,
@@ -28,16 +29,20 @@ import {
 } from '../../api/teacher/questionsApi'
 import type { QuestionFilter, QuestionPayload } from '../../api/teacher/questionsApi'
 import { ErrorState, PageSpinner } from '../../components/Loaders'
-import { getSubjects, getChapters } from '../../api/adminApi'
-import type { SubjectResponse, ChapterResponse, CreateQuestionRequest } from '../../types/models'
+import { getSubjects, getChapters, getSubjectAssignments, getMySubjectAssignments } from '../../api/adminApi'
+import { getPassages } from '../../api/questionApi'
+import { useAuthContext } from '../../context/AuthContext'
+import type { SubjectResponse, ChapterResponse, CreateQuestionRequest, SubjectAssignment, PassageResponse } from '../../types/models'
 import { parseExcelFile, generateSampleExcel } from '../../utils/excelParser'
 
 const QuestionBankPage = () => {
+  const { user } = useAuthContext()
   const [filters, setFilters] = useState<QuestionFilter>({})
   const [modalOpen, setModalOpen] = useState(false)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [editing, setEditing] = useState<TeacherQuestion | null>(null)
   const [selectedSubjectId, setSelectedSubjectId] = useState<number | undefined>(undefined)
+  const [selectedChapterId, setSelectedChapterId] = useState<number | undefined>(undefined)
   const [form] = Form.useForm()
   const [importForm] = Form.useForm()
   const queryClient = useQueryClient()
@@ -58,6 +63,15 @@ const QuestionBankPage = () => {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   })
 
+  // Use teacher-specific endpoint to get only assignments for current teacher
+  const assignmentsQuery = useQuery<SubjectAssignment[]>({
+    queryKey: ['subject-assignments', user?.id],
+    queryFn: getMySubjectAssignments,
+    enabled: !!user && user.role === 'TEACHER',
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  })
+
   const chaptersQuery = useQuery<ChapterResponse[]>({
     queryKey: ['chapters', filters.subjectId],
     queryFn: () => (filters.subjectId ? getChapters(filters.subjectId) : Promise.resolve([])),
@@ -71,6 +85,15 @@ const QuestionBankPage = () => {
     queryKey: ['chapters', selectedSubjectId],
     queryFn: () => (selectedSubjectId ? getChapters(selectedSubjectId) : Promise.resolve([])),
     enabled: !!selectedSubjectId,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  })
+
+  // Query to fetch passages for selected chapter in the form
+  const formPassagesQuery = useQuery<PassageResponse[]>({
+    queryKey: ['passages', selectedChapterId],
+    queryFn: () => (selectedChapterId ? getPassages(selectedChapterId) : Promise.resolve([])),
+    enabled: !!selectedChapterId,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   })
@@ -100,8 +123,9 @@ const QuestionBankPage = () => {
       message.success('Đã xoá câu hỏi')
       queryClient.invalidateQueries({ queryKey: ['teacher-questions'] })
     },
-    onError: (error: Error) => {
-      message.error(error.message || 'Không thể xóa câu hỏi. Vui lòng thử lại.')
+    onError: (error: any) => {
+      const errorMessage = error?.response?.data?.message || error?.message || 'Không thể xóa câu hỏi. Vui lòng thử lại.'
+      message.error(errorMessage)
     },
   })
 
@@ -116,8 +140,19 @@ const QuestionBankPage = () => {
       setImportModalOpen(false)
       importForm.resetFields()
     },
-    onError: (error: Error) => {
-      message.error(error.message || 'Không thể import câu hỏi. Vui lòng thử lại.')
+    onError: (error: any) => {
+      console.error('Import error:', error)
+      const errorMessage = 
+        error?.response?.data?.message || 
+        error?.response?.data?.error || 
+        error?.message || 
+        'Không thể import câu hỏi. Vui lòng thử lại.'
+      message.error(errorMessage)
+      
+      // Log chi tiết lỗi để debug
+      if (error?.response?.data) {
+        console.error('Error details:', error.response.data)
+      }
     },
   })
 
@@ -135,7 +170,15 @@ const QuestionBankPage = () => {
     {
       title: 'Độ khó',
       dataIndex: 'difficulty',
-      render: (level: number) => <Tag color="purple">{level}/5</Tag>,
+      render: (difficulty: string) => {
+        if (!difficulty) return <Tag>-</Tag>
+        const isAdvanced = difficulty.toUpperCase() === 'ADVANCED' || difficulty.toUpperCase() === 'NÂNG CAO'
+        return (
+          <Tag color={isAdvanced ? 'red' : 'green'}>
+            {isAdvanced ? 'Nâng cao' : 'Cơ bản'}
+          </Tag>
+        )
+      },
     },
     {
       title: 'Nội dung',
@@ -154,14 +197,22 @@ const QuestionBankPage = () => {
           <Button type="link" onClick={() => handleEdit(record)}>
             Sửa
           </Button>
-          <Button
-            type="link"
-            danger
-            loading={deleteMutation.isPending}
-            onClick={() => deleteMutation.mutate(record.id)}
+          <Popconfirm
+            title="Xác nhận xóa"
+            description="Bạn có chắc muốn xóa câu hỏi này?"
+            onConfirm={() => deleteMutation.mutate(record.id)}
+            okText="Xóa"
+            cancelText="Hủy"
+            okButtonProps={{ danger: true }}
           >
-            Xoá
-          </Button>
+            <Button
+              type="link"
+              danger
+              loading={deleteMutation.isPending}
+            >
+              Xoá
+            </Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -170,14 +221,15 @@ const QuestionBankPage = () => {
   const handleEdit = (question: TeacherQuestion) => {
     setEditing(question)
     setSelectedSubjectId(question.subjectId)
+    setSelectedChapterId(question.chapterId)
     setModalOpen(true)
     form.setFieldsValue({
       subjectId: question.subjectId,
       chapterId: question.chapterId,
+      passageId: question.passageId,
       questionType: question.questionType,
       content: question.content,
       difficulty: question.difficulty,
-      marks: question.marks,
       options: question.options?.map((option) => ({
         content: option.content,
         isCorrect: option.isCorrect,
@@ -188,11 +240,11 @@ const QuestionBankPage = () => {
 
   const handleAdd = () => {
     setSelectedSubjectId(undefined)
+    setSelectedChapterId(undefined)
     form.resetFields()
     form.setFieldsValue({
       questionType: 'MCQ',
-      difficulty: 3,
-      marks: 1,
+      difficulty: 'BASIC',
       options: [
         { content: '', isCorrect: true },
         { content: '', isCorrect: false },
@@ -221,7 +273,7 @@ const QuestionBankPage = () => {
       questionType: values.questionType,
       content: values.content,
       difficulty: values.difficulty,
-      marks: values.marks,
+      marks: 1, // Mặc định là 1, sẽ được tính lại khi tạo đề thi
       passageId: values.passageId,
       options: values.questionType === 'MCQ' ? values.options : undefined,
       answers: values.questionType === 'FILL' ? values.answers : undefined,
@@ -229,7 +281,7 @@ const QuestionBankPage = () => {
     createOrUpdateMutation.mutate(payload)
   }
 
-  if (questionQuery.isLoading) {
+  if (questionQuery.isLoading || subjectsQuery.isLoading || assignmentsQuery.isLoading) {
     return <PageSpinner />
   }
 
@@ -241,6 +293,27 @@ const QuestionBankPage = () => {
       />
     )
   }
+
+  // Calculate unique subjects that teacher is responsible for (based on assignments)
+  // API endpoint /my already returns only assignments for current teacher, so no need to filter
+  const assignments = assignmentsQuery.data || []
+  const teacherSubjectIds = new Set<number>()
+  assignments.forEach((a) => {
+    if (a.subjectId) teacherSubjectIds.add(a.subjectId)
+  })
+
+  // Filter subjects to only show those the teacher is responsible for
+  const availableSubjects = (subjectsQuery.data || []).filter((subject) => teacherSubjectIds.has(subject.id))
+  
+  // Log để debug
+  if (assignmentsQuery.isError) {
+    console.error('Error loading assignments:', assignmentsQuery.error)
+  }
+  if (subjectsQuery.isError) {
+    console.error('Error loading subjects:', subjectsQuery.error)
+  }
+  console.log('Teacher assignments:', assignments.length)
+  console.log('Available subjects for teacher:', availableSubjects.length, availableSubjects.map(s => s.name))
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -263,7 +336,7 @@ const QuestionBankPage = () => {
                 setFilters((prev) => ({ ...prev, subjectId: value, chapterId: undefined }))
               }}
             >
-              {subjectsQuery.data?.map((subject) => (
+              {availableSubjects.map((subject) => (
                 <Select.Option key={subject.id} value={subject.id}>
                   {subject.name}
                 </Select.Option>
@@ -309,17 +382,14 @@ const QuestionBankPage = () => {
             <Select
               allowClear
               placeholder="Độ khó"
-              style={{ width: 120 }}
+              style={{ width: 150 }}
               value={filters.difficulty}
               onChange={(value) => {
                 setFilters((prev) => ({ ...prev, difficulty: value }))
               }}
             >
-              {[1, 2, 3, 4, 5].map((level) => (
-                <Select.Option key={level} value={level}>
-                  {level}
-                </Select.Option>
-              ))}
+              <Select.Option value="BASIC">Cơ bản</Select.Option>
+              <Select.Option value="ADVANCED">Nâng cao</Select.Option>
             </Select>
           </Space>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
@@ -361,10 +431,11 @@ const QuestionBankPage = () => {
               placeholder="Chọn môn học"
               onChange={(value) => {
                 setSelectedSubjectId(value)
-                form.setFieldsValue({ chapterId: undefined })
+                setSelectedChapterId(undefined)
+                form.setFieldsValue({ chapterId: undefined, passageId: undefined })
               }}
             >
-              {subjectsQuery.data?.map((subject) => (
+              {availableSubjects.map((subject) => (
                 <Select.Option key={subject.id} value={subject.id}>
                   {subject.name}
                 </Select.Option>
@@ -372,10 +443,36 @@ const QuestionBankPage = () => {
             </Select>
           </Form.Item>
           <Form.Item name="chapterId" label="Chương" rules={[{ required: true }]}>
-            <Select placeholder="Chọn chương" disabled={!selectedSubjectId}>
+            <Select
+              placeholder="Chọn chương"
+              disabled={!selectedSubjectId}
+              onChange={(value) => {
+                setSelectedChapterId(value)
+                form.setFieldsValue({ passageId: undefined })
+              }}
+            >
               {formChaptersQuery.data?.map((chapter) => (
                 <Select.Option key={chapter.id} value={chapter.id}>
                   {chapter.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="passageId"
+            label="Đoạn văn (tùy chọn)"
+            tooltip="Chọn đoạn văn nếu câu hỏi này thuộc dạng đọc hiểu"
+          >
+            <Select
+              placeholder="Chọn đoạn văn (nếu có)"
+              disabled={!selectedChapterId}
+              allowClear
+            >
+              {formPassagesQuery.data?.map((passage) => (
+                <Select.Option key={passage.id} value={passage.id}>
+                  <Typography.Text ellipsis style={{ maxWidth: 400 }}>
+                    {passage.content.substring(0, 80)}...
+                  </Typography.Text>
                 </Select.Option>
               ))}
             </Select>
@@ -391,15 +488,9 @@ const QuestionBankPage = () => {
           </Form.Item>
           <Form.Item name="difficulty" label="Độ khó" rules={[{ required: true }]}>
             <Select>
-              {[1, 2, 3, 4, 5].map((level) => (
-                <Select.Option key={level} value={level}>
-                  {level}
-                </Select.Option>
-              ))}
+              <Select.Option value="BASIC">Cơ bản</Select.Option>
+              <Select.Option value="ADVANCED">Nâng cao</Select.Option>
             </Select>
-          </Form.Item>
-          <Form.Item name="marks" label="Điểm" rules={[{ required: true }]}>
-            <InputNumber min={1} max={10} style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item noStyle shouldUpdate={(prev, curr) => prev.questionType !== curr.questionType}>
@@ -487,11 +578,51 @@ const QuestionBankPage = () => {
             <Typography.Paragraph type="secondary">
               Tải file mẫu để xem định dạng Excel đúng. File Excel cần có các cột sau:
               <br />
-              • <strong>Môn học, Chương, Nội dung, Loại câu hỏi</strong> (MCQ/FILL), <strong>Độ khó</strong> (1-5), <strong>Điểm</strong>
+              • <strong>Môn học, Chương, Đoạn văn (tùy chọn), Nội dung, Loại câu hỏi</strong> (Trắc nghiệm/Điền hoặc MCQ/FILL), <strong>Độ khó</strong> (Cơ bản/Nâng cao)
               <br />
-              • Với <strong>MCQ</strong>: Phương án 1-4, Đáp án đúng (A/B/C/D hoặc 1/2/3/4)
+              • <strong>Đoạn văn</strong>: ID đoạn văn hoặc để trống nếu câu hỏi không thuộc đoạn văn nào
               <br />
-              • Với <strong>FILL</strong>: Đáp án 1, Đáp án 2, ...
+              • <strong>Loại câu hỏi</strong>: "Trắc nghiệm" hoặc "Điền" (có thể dùng "MCQ" hoặc "FILL")
+              <br />
+              • <strong>Lưu ý</strong>: Điểm số của câu hỏi sẽ được tính tự động khi tạo đề thi dựa trên tổng điểm và số lượng câu hỏi
+              <br />
+              <br />
+              <strong>Với câu hỏi Trắc nghiệm:</strong>
+              <br />
+              • Cần có cột <strong>Phương án 1, Phương án 2, Phương án 3, Phương án 4</strong> (tối thiểu 2 phương án)
+              <br />
+              • Cột <strong>Đáp án đúng</strong>: Nhập A/B/C/D hoặc 1/2/3/4 tương ứng với phương án đúng
+              <br />
+              <br />
+              <strong>Với câu hỏi Điền (Fill-in-the-blank):</strong>
+              <br />
+              • Câu hỏi điền là dạng câu hỏi yêu cầu học sinh điền từ/cụm từ vào chỗ trống
+              <br />
+              • <strong>Ví dụ:</strong> "Thủ đô của Việt Nam là ___" → Học sinh cần điền "Hà Nội"
+              <br />
+              • <strong>Cách nhập đáp án:</strong> Nhập các đáp án đúng vào các cột <strong>Đáp án 1, Đáp án 2, Đáp án 3, ...</strong> (tối đa 10 đáp án, cần ít nhất 1 đáp án)
+              <br />
+              <br />
+              <strong>📝 Hướng dẫn nhập đáp án cho giáo viên:</strong>
+              <br />
+              • <strong>Với tiếng Việt:</strong> Nhập đáp án có dấu đầy đủ, đúng chính tả
+              <br />
+              &nbsp;&nbsp;&nbsp;&nbsp;→ Hệ thống tự động chấp nhận cả chữ hoa và chữ thường
+              <br />
+              &nbsp;&nbsp;&nbsp;&nbsp;→ Ví dụ: Nếu bạn nhập "Hà Nội", học sinh ghi "Hà Nội", "hà nội", hoặc "HÀ NỘI" đều được tính đúng
+              <br />
+              • <strong>Không cần nhập:</strong> Các biến thể không dấu (như "Ha Noi", "Hanoi") vì hệ thống sẽ không chấp nhận
+              <br />
+              • <strong>Nếu có nhiều cách viết đúng:</strong> Nhập từng cách vào các cột riêng
+              <br />
+              &nbsp;&nbsp;&nbsp;&nbsp;Ví dụ: Câu hỏi "Thủ đô của Việt Nam là ___"
+              <br />
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Đáp án 1: "Hà Nội"
+              <br />
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Đáp án 2: "Hà nội" (nếu muốn chấp nhận cả cách viết này)
+              <br />
+              <br />
+              <strong>💡 Tóm lại:</strong> Chỉ cần nhập đáp án có dấu đầy đủ, đúng chính tả. Hệ thống sẽ tự động chấp nhận cả chữ hoa và chữ thường, không cần nhập nhiều biến thể về chữ hoa/thường
             </Typography.Paragraph>
             <Button icon={<FileExcelOutlined />} onClick={generateSampleExcel} style={{ marginTop: 8 }}>
               Tải file mẫu
@@ -509,16 +640,31 @@ const QuestionBankPage = () => {
               }
 
               try {
-                // Tạo map cho subjects và chapters
-                const subjects = subjectsQuery.data || []
+                // Kiểm tra availableSubjects
+                if (!availableSubjects || availableSubjects.length === 0) {
+                  const errorMsg = assignmentsQuery.isError 
+                    ? 'Không thể tải danh sách phân công môn học. Vui lòng thử lại sau.'
+                    : 'Bạn chưa được phân công môn học nào. Vui lòng liên hệ quản trị viên để được phân công môn học trước khi import câu hỏi.'
+                  message.error(errorMsg)
+                  console.error('No subjects available for teacher:', {
+                    assignmentsError: assignmentsQuery.error,
+                    assignmentsData: assignmentsQuery.data,
+                    allSubjects: subjectsQuery.data?.length || 0,
+                    teacherSubjectIds: Array.from(teacherSubjectIds),
+                  })
+                  return
+                }
+
+                // Tạo map cho subjects và chapters (chỉ các môn mà giáo viên phụ trách)
+                const subjects = availableSubjects
                 const subjectMap = new Map<string, number>()
-                
+
                 // Map exact name (case-insensitive)
                 subjects.forEach((s) => {
                   const normalizedName = s.name.toLowerCase().trim()
                   subjectMap.set(normalizedName, s.id)
                 })
-                
+
                 // Also map partial matches (e.g., "Vật lý" matches "Vật lý 10")
                 subjects.forEach((s) => {
                   const nameParts = s.name.toLowerCase().trim().split(/\s+/)
@@ -530,10 +676,15 @@ const QuestionBankPage = () => {
                     }
                   }
                 })
-                
+
                 // Log available subjects for debugging
                 console.log('Available subjects:', subjects.map(s => s.name))
                 console.log('Subject map keys:', Array.from(subjectMap.keys()))
+                
+                if (subjects.length === 0) {
+                  message.error('Không có môn học nào để import. Vui lòng kiểm tra lại phân công môn học.')
+                  return
+                }
 
                 // Fetch tất cả chapters để tạo map
                 const allChapters: Array<{ subjectName: string; chapterName: string; chapterId: number }> = []
@@ -559,15 +710,15 @@ const QuestionBankPage = () => {
                 allChapters.forEach((ch) => {
                   const normalizedSubjectName = ch.subjectName.toLowerCase().trim()
                   const normalizedChapterName = ch.chapterName.toLowerCase().trim()
-                  
+
                   // Map: subjectName_chapterName (exact)
                   chapterMap.set(`${normalizedSubjectName}_${normalizedChapterName}`, ch.chapterId)
-                  
+
                   // Map: chapterName only (fallback)
                   if (!chapterMap.has(normalizedChapterName)) {
                     chapterMap.set(normalizedChapterName, ch.chapterId)
                   }
-                  
+
                   // Map: partial chapter name (e.g., "Cơ học" from "Chương 1: Cơ học")
                   const chapterNameParts = normalizedChapterName.split(/[:\-]/)
                   chapterNameParts.forEach(part => {
@@ -582,7 +733,7 @@ const QuestionBankPage = () => {
                       }
                     }
                   })
-                  
+
                   // Also map meaningful words (remove "Chương", numbers, keep main content)
                   const meaningfulWords = normalizedChapterName
                     .split(/\s+/)
@@ -597,23 +748,105 @@ const QuestionBankPage = () => {
                     }
                   }
                 })
-                
+
                 console.log('Available chapters:', allChapters.map(ch => `${ch.subjectName} > ${ch.chapterName}`))
                 console.log('Chapter map keys (first 30):', Array.from(chapterMap.keys()).slice(0, 30))
+                
+                if (allChapters.length === 0) {
+                  message.error('Không tìm thấy chương nào trong các môn học được phân công. Vui lòng tạo chương trước khi import câu hỏi.')
+                  return
+                }
+
+                // Fetch tất cả passages để tạo map
+                const { getPassages } = await import('../../api/questionApi')
+                const allPassages: Array<{ passageId: number; chapterId: number; content: string }> = []
+                await Promise.all(
+                  allChapters.map(async (ch) => {
+                    try {
+                      const passages = await getPassages(ch.chapterId)
+                      passages.forEach((p) => {
+                        allPassages.push({
+                          passageId: p.id,
+                          chapterId: ch.chapterId,
+                          content: p.content,
+                        })
+                      })
+                    } catch (error) {
+                      console.error(`Error fetching passages for chapter ${ch.chapterId}:`, error)
+                    }
+                  })
+                )
+
+                // Tạo passageMap: ID -> passageId, và content (first 50 chars) -> passageId
+                const passageMap = new Map<string, number>()
+                allPassages.forEach((p) => {
+                  // Map by ID
+                  passageMap.set(String(p.passageId), p.passageId)
+                  // Map by content (first 50 chars, lowercase)
+                  const contentKey = p.content.substring(0, 50).toLowerCase().trim()
+                  if (contentKey) {
+                    passageMap.set(contentKey, p.passageId)
+                  }
+                })
+
+                console.log('Available passages:', allPassages.length)
+                console.log('Passage map keys (first 20):', Array.from(passageMap.keys()).slice(0, 20))
+
+                // Log để debug
+                console.log('=== IMPORT DEBUG INFO ===')
+                console.log('Subjects count:', subjects.length)
+                console.log('Chapters count:', allChapters.length)
+                console.log('Subject map size:', subjectMap.size)
+                console.log('Chapter map size:', chapterMap.size)
+                console.log('Sample subject names from map:', Array.from(subjectMap.keys()).slice(0, 5))
+                console.log('Sample chapter names from map:', Array.from(chapterMap.keys()).slice(0, 10))
 
                 // Parse file
-                const result = await parseExcelFile(file, subjectMap, chapterMap, allChapters.map(ch => ({ subjectName: ch.subjectName, chapterName: ch.chapterName })))
+                const result = await parseExcelFile(
+                  file,
+                  subjectMap,
+                  chapterMap,
+                  allChapters.map((ch) => ({ subjectName: ch.subjectName, chapterName: ch.chapterName })),
+                  passageMap
+                )
+                
+                console.log('=== PARSE RESULT ===')
+                console.log('Questions parsed:', result.questions.length)
+                console.log('Errors count:', result.errors.length)
+                if (result.errors.length > 0) {
+                  console.log('First 5 errors:', result.errors.slice(0, 5))
+                }
+
+                // Log chi tiết để debug
+                console.log('Parse result:', {
+                  totalQuestions: result.questions.length,
+                  totalErrors: result.errors.length,
+                  firstErrors: result.errors.slice(0, 5),
+                })
 
                 if (result.errors.length > 0) {
+                  // Hiển thị thông báo chi tiết hơn
+                  const errorSummary = result.errors.slice(0, 10).map(err => `Dòng ${err.row}: ${err.error}`).join('\n')
+                  console.error('Import errors (first 10):', errorSummary)
+                  
                   message.warning(
-                    `Import thành công ${result.questions.length} câu hỏi. Có ${result.errors.length} lỗi. Vui lòng kiểm tra lại file.`
+                    `Import thành công ${result.questions.length} câu hỏi. Có ${result.errors.length} lỗi. Vui lòng kiểm tra lại file.`,
+                    10
                   )
-                  console.error('Import errors:', result.errors)
-                  // Hiển thị lỗi chi tiết nếu cần
+                  
+                  // Hiển thị lỗi chi tiết trong console và modal
                   if (result.errors.length <= 10) {
                     result.errors.forEach((err) => {
-                      message.error(`Dòng ${err.row}: ${err.error}`, 5)
+                      console.error(`Row ${err.row}: ${err.error}`)
+                      message.error(`Dòng ${err.row}: ${err.error}`, 8)
                     })
+                  } else {
+                    // Nếu có nhiều lỗi, chỉ hiển thị 5 lỗi đầu
+                    result.errors.slice(0, 5).forEach((err) => {
+                      console.error(`Row ${err.row}: ${err.error}`)
+                      message.error(`Dòng ${err.row}: ${err.error}`, 8)
+                    })
+                    message.warning(`Và ${result.errors.length - 5} lỗi khác. Vui lòng mở Console (F12) để xem chi tiết.`, 10)
                   }
                 }
 
@@ -680,4 +913,6 @@ const QuestionBankPage = () => {
 }
 
 export default QuestionBankPage
+
+
 

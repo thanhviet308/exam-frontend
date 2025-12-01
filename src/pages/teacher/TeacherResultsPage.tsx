@@ -20,7 +20,11 @@ const TeacherResultsPage = () => {
 
   const columns = [
     { title: 'Sinh viên', dataIndex: 'studentName' },
-    { title: 'Email', dataIndex: 'studentEmail' },
+    {
+      title: 'Email',
+      dataIndex: 'studentEmail',
+      render: (email: string) => email || '-',
+    },
     { title: 'Điểm', dataIndex: 'score', width: 100 },
     {
       title: 'Trạng thái',

@@ -17,28 +17,40 @@ export type PassagePayload = {
 }
 
 export const fetchPassages = async (filter: PassageFilter): Promise<TeacherPassage[]> => {
-  if (!filter.subjectId || !filter.chapterId) {
+  if (!filter.subjectId) {
     return []
   }
 
-  const [subjects, chapters, backendPassages] = await Promise.all([
+  const [subjects, chapters] = await Promise.all([
     getSubjects(),
     getChapters(filter.subjectId),
-    getPassagesApi(filter.chapterId),
   ])
 
   const subject = subjects.find((s) => s.id === filter.subjectId)
-  const chapter = chapters.find((c) => c.id === filter.chapterId)
+  
+  // If chapterId is specified, only fetch passages for that chapter
+  // Otherwise, fetch passages for all chapters in the subject
+  const chaptersToFetch = filter.chapterId
+    ? chapters.filter((c) => c.id === filter.chapterId)
+    : chapters
 
-  return backendPassages.map<TeacherPassage>((p) => ({
-    id: p.id,
-    subjectId: filter.subjectId!,
-    subjectName: subject?.name ?? 'Chưa xác định',
-    chapterId: p.chapterId,
-    chapterName: chapter?.name ?? 'Chưa xác định',
-    content: p.content,
-    createdAt: new Date().toISOString(),
-  }))
+  // Fetch passages for all relevant chapters
+  const passagesPromises = chaptersToFetch.map((chapter) =>
+    getPassagesApi(chapter.id).then((passages) =>
+      passages.map<TeacherPassage>((p) => ({
+        id: p.id,
+        subjectId: filter.subjectId!,
+        subjectName: subject?.name ?? 'Chưa xác định',
+        chapterId: p.chapterId,
+        chapterName: chapter.name,
+        content: p.content,
+        createdAt: new Date().toISOString(),
+      }))
+    )
+  )
+
+  const passagesArrays = await Promise.all(passagesPromises)
+  return passagesArrays.flat()
 }
 
 export const createPassage = async (payload: PassagePayload): Promise<TeacherPassage> => {

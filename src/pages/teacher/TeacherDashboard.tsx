@@ -27,13 +27,16 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchQuestions } from '../../api/teacher/questionsApi'
 import { fetchTemplates } from '../../api/teacher/examTemplateApi'
 import { fetchExamInstances } from '../../api/teacher/examInstanceApi'
-import { getSubjects } from '../../api/adminApi'
+import { getSubjects, getSubjectAssignments, getMySubjectAssignments } from '../../api/adminApi'
+import { useAuthContext } from '../../context/AuthContext'
 import dayjs from 'dayjs'
 import { PageSpinner } from '../../components/Loaders'
 import type { TeacherQuestion, TeacherTemplate, TeacherExamInstance } from '../../types'
-import type { SubjectResponse } from '../../types/models'
+import type { SubjectResponse, SubjectAssignment } from '../../types/models'
 
 const TeacherDashboard = () => {
+  const { user } = useAuthContext()
+  
   const questionsQuery = useQuery<TeacherQuestion[]>({
     queryKey: ['teacher-questions'],
     queryFn: () => fetchQuestions({}),
@@ -54,7 +57,14 @@ const TeacherDashboard = () => {
     queryFn: getSubjects,
   })
 
-  if (questionsQuery.isLoading || templatesQuery.isLoading || examsQuery.isLoading || subjectsQuery.isLoading) {
+  // Use teacher-specific endpoint to get only assignments for current teacher
+  const assignmentsQuery = useQuery<SubjectAssignment[]>({
+    queryKey: ['subject-assignments', user?.id],
+    queryFn: getMySubjectAssignments,
+    enabled: !!user && user.role === 'TEACHER',
+  })
+
+  if (questionsQuery.isLoading || templatesQuery.isLoading || examsQuery.isLoading || subjectsQuery.isLoading || assignmentsQuery.isLoading) {
     return <PageSpinner />
   }
 
@@ -62,12 +72,20 @@ const TeacherDashboard = () => {
   const templates = templatesQuery.data || []
   const exams = examsQuery.data || []
   const subjects = subjectsQuery.data || []
+  const assignments = assignmentsQuery.data || []
+
+  // Calculate unique subjects that teacher is responsible for (based on assignments)
+  // API endpoint /my already returns only assignments for current teacher, so no need to filter
+  const teacherSubjectIds = new Set<number>()
+  assignments.forEach((a) => {
+    if (a.subjectId) teacherSubjectIds.add(a.subjectId)
+  })
 
   // Calculate statistics
   const stats = {
     questionBank: questions.length,
     templates: templates.length,
-    subjects: subjects.length,
+    subjects: teacherSubjectIds.size,
     upcomingExams: exams.filter((exam) => {
       const now = dayjs()
       const startTime = dayjs(exam.startTime)
