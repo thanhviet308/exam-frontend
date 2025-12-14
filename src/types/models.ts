@@ -114,6 +114,21 @@ export interface QuestionAnswerRequest {
   answer: string
 }
 
+export interface BulkCreateQuestionResponse {
+  created: QuestionResponse[]
+  duplicates: DuplicateQuestionInfo[]
+  totalProcessed: number
+  totalCreated: number
+  totalDuplicates: number
+}
+
+export interface DuplicateQuestionInfo {
+  content: string
+  chapterId: number
+  passageId?: number
+  reason: 'TRONG_FILE' | 'DA_TON_TAI'
+}
+
 export interface CreateQuestionRequest {
   chapterId: number
   passageId?: number

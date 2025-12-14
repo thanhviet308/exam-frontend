@@ -22,6 +22,7 @@ import { PlusOutlined, FileExcelOutlined, UploadOutlined } from '@ant-design/ico
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TeacherQuestion } from '../../types'
 import {
+  bulkCreateQuestions,
   createQuestion,
   deleteQuestion,
   fetchQuestions,
@@ -45,6 +46,13 @@ const QuestionBankPage = () => {
   const [selectedChapterId, setSelectedChapterId] = useState<number | undefined>(undefined)
   const [form] = Form.useForm()
   const [importForm] = Form.useForm()
+  const [duplicatesModalOpen, setDuplicatesModalOpen] = useState(false)
+  const [importResult, setImportResult] = useState<{
+    created: number
+    duplicates: any[]
+    totalProcessed: number
+    totalDuplicates: number
+  } | null>(null)
   const queryClient = useQueryClient()
 
   const questionQuery = useQuery<TeacherQuestion[]>({
@@ -131,11 +139,26 @@ const QuestionBankPage = () => {
 
   const bulkImportMutation = useMutation({
     mutationFn: async (requests: CreateQuestionRequest[]) => {
-      const { bulkCreateQuestions: bulkCreateQuestionsApi } = await import('../../api/questionApi')
-      return await bulkCreateQuestionsApi(requests)
+      return await bulkCreateQuestions(requests)
     },
     onSuccess: (data) => {
-      message.success(`Đã import thành công ${data.length} câu hỏi`)
+      const { created, duplicates, totalCreated, totalDuplicates } = data
+      
+      if (totalDuplicates > 0) {
+        setImportResult({
+          created: totalCreated,
+          duplicates,
+          totalProcessed: data.totalProcessed,
+          totalDuplicates,
+        })
+        setDuplicatesModalOpen(true)
+        message.warning(
+          `Đã import thành công ${totalCreated} câu hỏi. Có ${totalDuplicates} câu hỏi bị bỏ qua do trùng lặp.`
+        )
+      } else {
+        message.success(`Đã import thành công ${totalCreated} câu hỏi`)
+      }
+      
       queryClient.invalidateQueries({ queryKey: ['teacher-questions'] })
       setImportModalOpen(false)
       importForm.resetFields()
@@ -907,6 +930,73 @@ const QuestionBankPage = () => {
             </Form.Item>
           </Form>
         </Space>
+      </Modal>
+
+      {/* Modal hiển thị câu hỏi trùng */}
+      <Modal
+        title="Thông tin import câu hỏi"
+        open={duplicatesModalOpen}
+        onCancel={() => setDuplicatesModalOpen(false)}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setDuplicatesModalOpen(false)}>
+            Đóng
+          </Button>,
+        ]}
+        width={800}
+      >
+        {importResult && (
+          <Space direction="vertical" style={{ width: '100%' }} size="large">
+            <div>
+              <Typography.Text strong>
+                Tổng số câu hỏi đã xử lý: {importResult.totalProcessed}
+              </Typography.Text>
+              <br />
+              <Typography.Text type="success" strong>
+                Đã tạo thành công: {importResult.created} câu hỏi
+              </Typography.Text>
+              <br />
+              <Typography.Text type="warning" strong>
+                Bị bỏ qua do trùng lặp: {importResult.totalDuplicates} câu hỏi
+              </Typography.Text>
+            </div>
+
+            {importResult.duplicates.length > 0 && (
+              <div>
+                <Typography.Text strong>Danh sách câu hỏi bị bỏ qua:</Typography.Text>
+                <Table
+                  dataSource={importResult.duplicates}
+                  rowKey={(record, index) => `${record.chapterId}-${record.content}-${index}`}
+                  pagination={{ pageSize: 10 }}
+                  size="small"
+                  columns={[
+                    {
+                      title: 'Nội dung câu hỏi',
+                      dataIndex: 'content',
+                      key: 'content',
+                      ellipsis: true,
+                      render: (text: string) => (
+                        <Typography.Text style={{ maxWidth: 400 }} ellipsis={{ tooltip: text }}>
+                          {text}
+                        </Typography.Text>
+                      ),
+                    },
+                    {
+                      title: 'Lý do',
+                      dataIndex: 'reason',
+                      key: 'reason',
+                      width: 150,
+                      render: (reason: string) => (
+                        <Tag color={reason === 'TRONG_FILE' ? 'orange' : 'red'}>
+                          {reason === 'TRONG_FILE' ? 'Trùng trong file' : 'Đã tồn tại'}
+                        </Tag>
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            )}
+          </Space>
+        )}
       </Modal>
     </Space>
   )

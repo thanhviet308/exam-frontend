@@ -149,9 +149,10 @@ export const deleteQuestion = async (id: number): Promise<void> => {
 
 export const bulkCreateQuestions = async (
   requests: CreateQuestionRequest[],
-): Promise<TeacherQuestion[]> => {
+): Promise<{ created: TeacherQuestion[]; duplicates: any[]; totalProcessed: number; totalCreated: number; totalDuplicates: number }> => {
   const { bulkCreateQuestions: bulkCreateQuestionsApi } = await import('../questionApi')
-  const created = await bulkCreateQuestionsApi(requests)
+  const response = await bulkCreateQuestionsApi(requests)
+  
   // Fetch subjects and chapters to map correctly
   const subjects = await getSubjects()
   const allChaptersMap = new Map<number, { subjectName: string; chapterName: string }>()
@@ -169,7 +170,7 @@ export const bulkCreateQuestions = async (
     })
   )
 
-  return created.map((q) => {
+  const created = response.created.map((q) => {
     const chapterInfo = allChaptersMap.get(q.chapterId)
     const subject = subjects.find((s) => {
       const chInfo = allChaptersMap.get(q.chapterId)
@@ -195,4 +196,12 @@ export const bulkCreateQuestions = async (
       createdAt: new Date().toISOString(),
     }
   })
+
+  return {
+    created,
+    duplicates: response.duplicates,
+    totalProcessed: response.totalProcessed,
+    totalCreated: response.totalCreated,
+    totalDuplicates: response.totalDuplicates,
+  }
 }

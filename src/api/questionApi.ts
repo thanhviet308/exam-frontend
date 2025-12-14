@@ -1,5 +1,6 @@
 import apiClient from './axiosClient'
 import type {
+  BulkCreateQuestionResponse,
   QuestionResponse,
   CreateQuestionRequest,
   QuestionFilterRequest,
@@ -35,8 +36,8 @@ export const deleteQuestion = async (id: number): Promise<void> => {
   await apiClient.delete(`/questions/${id}`)
 }
 
-export const bulkCreateQuestions = async (requests: CreateQuestionRequest[]): Promise<QuestionResponse[]> => {
-  const response = await apiClient.post<QuestionResponse[]>('/questions/bulk', requests)
+export const bulkCreateQuestions = async (requests: CreateQuestionRequest[]): Promise<BulkCreateQuestionResponse> => {
+  const response = await apiClient.post<BulkCreateQuestionResponse>('/questions/bulk', requests)
   return response.data
 }
 
